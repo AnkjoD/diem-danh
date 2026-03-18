@@ -1,0 +1,6 @@
+# Bỏ qua các file model AI
+*.onnx
+*.pt
+*.pth
+*.h5
+ai/models/

@@ -1,0 +1,20 @@
+FROM python:3.10-slim AS base
+WORKDIR /app
+# Tạo venv và đưa vào PATH
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# --- Môi trường Development ---
+FROM base AS development
+# Khi chạy Dev, code sẽ được mount từ bên ngoài vào, chỉ cần định nghĩa CMD
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+# --- Môi trường Production ---
+FROM base AS production
+COPY . .
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

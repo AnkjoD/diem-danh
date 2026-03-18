@@ -1,0 +1,108 @@
+version: "3.8"
+
+networks:
+  homura_network:
+    driver: bridge
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: homura-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-admin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-homura123}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    restart: always
+    networks:
+      - homura_network
+
+  mongodb:
+    image: mongo:latest
+    container_name: homura-mongodb
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: always
+    networks:
+      - homura_network
+
+  backend:
+    build:
+      context: ./backend
+      target: development
+    container_name: homura-backend
+    command: npm run start:dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend:/app
+      - backend_modules:/app/node_modules
+    environment:
+      - NODE_ENV=development
+      - MONGO_URI=${DATABASE_URL}
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-admin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-homura123}
+      - FASTAPI_URL=http://ai:8000
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+    depends_on:
+      - mongodb
+      - minio
+    networks:
+      - homura_network
+
+  ai:
+    build:
+      context: ./ai
+      target: development
+    container_name: homura-ai
+    ports:
+      - "8000:8000"
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./ai:/app
+      - ai_venv:/opt/venv
+    depends_on:
+      - minio
+    environment:
+      - APP_ENV=development
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+    networks:
+      - homura_network
+
+  frontend:
+    build:
+      context: ./frontend
+      target: development
+    container_name: homura-frontend
+    command: npm run dev
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./frontend:/app
+      - frontend_modules:/app/node_modules
+      - /app/.next
+    environment:
+      - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+    depends_on:
+      - backend
+    networks:
+      - homura_network
+
+volumes:
+  minio_data:
+  mongodb_data:
+  backend_modules:
+  frontend_modules:
+  ai_venv:
