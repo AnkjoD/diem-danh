@@ -35,6 +35,8 @@ class FaceMatcher:
         return self.id_mapping[best_idx], best_distance
 
     def _save(self) -> None:
+        os.makedirs(os.path.dirname(self.index_file), exist_ok=True)
+        os.makedirs(os.path.dirname(self.map_file), exist_ok=True)
         faiss.write_index(self.index, self.index_file)
         with open(self.map_file, 'w', encoding='utf-8') as f:
             json.dump(self.id_mapping, f)

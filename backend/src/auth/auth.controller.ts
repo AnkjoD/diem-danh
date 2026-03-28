@@ -33,6 +33,13 @@ export class AuthController {
       teacher: result.teacher,
     };
   }
+
+  @Post('logout')
+  async logout(@Res({ passthrough: true }) res: Response) {
+    res.clearCookie('refresh_token');
+    res.clearCookie('xsrf_token');
+    return { message: 'Logged out successfully' };
+  }
   @Public()
   @Post('register')
   async register(@Body() loginDto: CreateTeacherDto, @Res({ passthrough: true }) res: Response) {
@@ -54,14 +61,28 @@ export class AuthController {
       teacher: result.teacher,
     };
   }
+  @Public()
   @Post('refresh')
-  async refresh(@Req() req: RequestWithCookies) {
-  
+  async refresh(@Req() req: RequestWithCookies, @Res({ passthrough: true }) res: Response) {
     const refreshToken = req.cookies['refresh_token'] as string | null ;
     if (!refreshToken) throw new UnauthorizedException();
-    const newAccessToken = await this.authService.refreshAccessToken(refreshToken);
+    
+    const result = await this.authService.refreshAccessToken(refreshToken);
+    res.cookie('refresh_token', result.refresh_token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+    res.cookie('xsrf_token', result.xsrf_token, {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+    
     return {
-      access_token: newAccessToken,
+      access_token: result.access_token,
     }
   }
 

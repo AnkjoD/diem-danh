@@ -1,5 +1,3 @@
-version: "3.8"
-
 networks:
   homura_network:
     driver: bridge
@@ -12,25 +10,54 @@ services:
       - "9000:9000"
       - "9001:9001"
     environment:
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-admin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-homura123}
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
     volumes:
       - minio_data:/data
     command: server /data --console-address ":9001"
     restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - homura_network
 
-  mongodb:
-    image: mongo:latest
-    container_name: homura-mongodb
-    ports:
-      - "27018:27017"
-    volumes:
-      - mongodb_data:/data/db
+  postgres:
+    image: postgres:15
+    container_name: homura_postgres
     restart: always
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_DATABASE}
+    ports:
+      - "${DB_PORT}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     networks:
       - homura_network
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: homura_pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    ports:
+      - "5050:80"
+    networks:
+      - homura_network
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   backend:
     build:
@@ -39,23 +66,30 @@ services:
     container_name: homura-backend
     command: npm run start:dev
     ports:
-      - "3000:3000"
+      - "4000:4000"
     volumes:
       - ./backend:/app
       - backend_modules:/app/node_modules
     environment:
       - NODE_ENV=development
-      - MONGO_URI=${DATABASE_URL}
+      - DB_HOST=postgres
+      - DB_PORT=${DB_PORT}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_DATABASE=${DB_DATABASE}
       - MINIO_ENDPOINT=minio
       - MINIO_PORT=9000
-      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-admin}
-      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-homura123}
-      - FASTAPI_URL=http://ai:8000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+      - FASTAPI_URL=${FASTAPI_URL}
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
+      - JWT_SECRET=${JWT_SECRET}
     depends_on:
-      - mongodb
-      - minio
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     networks:
       - homura_network
 
@@ -71,7 +105,8 @@ services:
       - ./ai:/app
       - ai_venv:/opt/venv
     depends_on:
-      - minio
+      minio:
+        condition: service_healthy
     environment:
       - APP_ENV=development
       - CHOKIDAR_USEPOLLING=true
@@ -86,13 +121,14 @@ services:
     container_name: homura-frontend
     command: npm run dev
     ports:
-      - "3001:3000"
+      - "3000:3000"
     volumes:
       - ./frontend:/app
       - frontend_modules:/app/node_modules
       - /app/.next
     environment:
       - NODE_ENV=development
+      - NEXT_PUBLIC_SERVER_URL=${SERVER_URL}
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
     depends_on:
@@ -102,7 +138,7 @@ services:
 
 volumes:
   minio_data:
-  mongodb_data:
+  postgres_data:
   backend_modules:
   frontend_modules:
   ai_venv:

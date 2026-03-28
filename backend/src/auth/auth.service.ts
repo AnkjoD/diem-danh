@@ -1,28 +1,24 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import {compare} from 'bcrypt';
 import { TeacherService } from '../teacher/teacher.service';
 import { LoginDto } from './dto/login.dto';
 import { IJwtPayload } from './interfaces/jwt-payload.interface';
-import { CreateTeacherDto } from '~/teacher/dto/create-teacher.dto';
-import { Teacher } from '~/teacher/schemas/teacher.schema';
+import { CreateTeacherDto } from '../teacher/dto/create-teacher.dto';
+import { Teacher } from '../teacher/entities/teacher.entity';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   constructor(
     private teacherService: TeacherService,
     private jwtService: JwtService,
   ) {}
 
   async register(registerDto: CreateTeacherDto) {
-    const existingTeacher = await this.teacherService.findByEmail(registerDto.email);
-    if (existingTeacher) {
-      throw new UnauthorizedException('Email đã tồn tại');
-    }
     const teacher = await this.teacherService.create(registerDto);
-
     const payload: IJwtPayload = {
-      sub: teacher._id.toString(),
+      sub: teacher.id,
       full_name: teacher.full_name,
       email: teacher.email,
     };
@@ -41,17 +37,17 @@ export class AuthService {
     };
   }
   async login(loginDto: LoginDto) {
-    const teacher: Teacher| null = await this.teacherService.findByEmail(loginDto.email);
+    const teacher = await this.teacherService.findByEmail(loginDto.email);
     if (!teacher) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Email hoặc password không đúng');
     }
     const isPasswordValid = await compare(loginDto.password, teacher.password);
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Email hoặc password không đúng');
     }
 
     const payload: IJwtPayload = {
-      sub: teacher._id.toString(),
+      sub: teacher.id,
       full_name: teacher.full_name,
       email: teacher.email,
 
@@ -84,10 +80,16 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
     const accessToken = await this.jwtService.signAsync(cleanPayload, { expiresIn: '1h' });
+    const newRefreshToken = await this.jwtService.signAsync(cleanPayload, { expiresIn: '7d' });
+    const xsrfToken = btoa(Math.random().toString()).substring(0, 32);
 
-    return accessToken;
+    return {
+      access_token: accessToken,
+      refresh_token: newRefreshToken,
+      xsrf_token: xsrfToken,
+    };
   } catch (e) {
-    console.error(e)
+    this.logger.error(`Refresh token error: ${e.message}`, e.stack);
     throw new UnauthorizedException('Phiên đăng nhập đã hết hạn, vui lòng login lại!');
   }
 }

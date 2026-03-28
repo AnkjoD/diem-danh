@@ -64,22 +64,18 @@ http.interceptors.request.use(
 
 http.interceptors.response.use(
   (response) => {
-    if (response.data && response.data.access_token) {
-      localStorage.setItem("accessToken", response.data.access_token);
+
+    if (response.data && typeof response.data === 'object' && 'statusCode' in response.data && 'data' in response.data) {
+      response.data = response.data.data;
     }
     return response;
   },
-  async (error) => {
+  async (error: AxiosError) => {
     const originalRequest = error.config as CustomAxiosRequestConfig;
-
+    if (originalRequest.url?.includes("/auth")) {
+      return Promise.reject(error);
+    }
     if (error.response?.status === 401 && !originalRequest._retry) {
-      if (originalRequest.url === "/auth/refresh") {
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("accessToken");
-          window.location.href = "/login";
-        }
-        return Promise.reject(error);
-      }
 
       if (isRefreshing) {
         return new Promise<string | null>((resolve, reject) => {
@@ -99,12 +95,14 @@ http.interceptors.response.use(
 
       try {
         const currentXsrfToken = getCookie("xsrf_token");
-        const headers: any = { "Content-Type": "application/json" };
+        const headers: { [key: string]: string } = {
+          "Content-Type": "application/json",
+        };
         if (currentXsrfToken) {
           headers["x-xsrf-token"] = currentXsrfToken;
         }
 
-        const { data } = await axios.post(
+        const response = await axios.post(
           `${process.env.NEXT_PUBLIC_SERVER_URL}/auth/refresh`,
           {},
           {
@@ -113,26 +111,31 @@ http.interceptors.response.use(
           },
         );
 
+        const responseData = response.data?.data || response.data;
+
         if (typeof window !== "undefined") {
-          localStorage.setItem("accessToken", data.access_token);
+          localStorage.setItem("accessToken", responseData.access_token);
         }
 
         http.defaults.headers.common["Authorization"] =
-          `Bearer ${data.access_token}`;
+          `Bearer ${responseData.access_token}`;
 
         if (originalRequest.headers) {
-          originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
+          originalRequest.headers.Authorization = `Bearer ${responseData.access_token}`;
         }
 
-        processQueue(null, data.access_token);
+        processQueue(null, responseData.access_token);
 
         return http(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);
 
         if (typeof window !== "undefined") {
-          localStorage.removeItem("accessToken");
-          window.location.href = "/login";
+          const isLoginPage = window.location.pathname === "/auth";
+          if (!isLoginPage) {
+            localStorage.removeItem("accessToken");
+            window.location.href = "/auth";
+          }
         }
 
         return Promise.reject(refreshError);

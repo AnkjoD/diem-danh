@@ -25,5 +25,5 @@
     @IsString()
     phone?: string;
 
-    
+    images: string[]
   }

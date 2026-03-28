@@ -30,12 +30,23 @@ export class MinioService implements OnModuleInit {
   constructor() {
     this.bucketName = process.env.MINIO_BUCKET_NAME || 'attendance-logs';
     
+    const {
+      MINIO_ENDPOINT,
+      MINIO_PORT,
+      MINIO_ACCESS_KEY,
+      MINIO_SECRET_KEY,
+    } = process.env;
+
+    if (!MINIO_ENDPOINT || !MINIO_PORT || !MINIO_ACCESS_KEY || !MINIO_SECRET_KEY) {
+      throw new Error('Missing required MinIO environment variables');
+    }
+
     const config: IMinioConfig = {
-      endPoint: process.env.MINIO_ENDPOINT || '127.0.0.1',
-      port: parseInt(process.env.MINIO_PORT || '9000', 10),
+      endPoint: MINIO_ENDPOINT,
+      port: parseInt(MINIO_PORT, 10),
       useSSL: process.env.MINIO_USE_SSL === 'true',
-      accessKey: process.env.MINIO_ACCESS_KEY || '',
-      secretKey: process.env.MINIO_SECRET_KEY || '',
+      accessKey: MINIO_ACCESS_KEY,
+      secretKey: MINIO_SECRET_KEY,
     };
 
     this.minioClient = new Minio.Client(config);
@@ -87,7 +98,14 @@ export class MinioService implements OnModuleInit {
         { 'Content-Type': mimetype }
       );
       
-      const endPoint = process.env.MINIO_ENDPOINT || '127.0.0.1';
+      // --- FIX LỖI HIỂN THỊ ẢNH TRÊN TRÌNH DUYỆT ---
+      // Trình duyệt không hiểu host 'minio' trong network của Docker. 
+      // Ta chuyển 'minio' sang '127.0.0.1' (localhost) để frontend load được ảnh.
+      // Xóa block này nếu sau này dùng Domain/Nginx Proxy thật.
+      let endPoint = process.env.MINIO_ENDPOINT || '127.0.0.1';
+      if (endPoint === 'minio') {
+        endPoint = '127.0.0.1';
+      }
       const port = process.env.MINIO_PORT || '9000';
       const protocol = process.env.MINIO_USE_SSL === 'true' ? 'https' : 'http';
       
@@ -102,8 +120,7 @@ export class MinioService implements OnModuleInit {
       await this.minioClient.removeObject(this.bucketName, fileName);
       
     } catch (error) {
-      console.error(`⚠️ Không thể xóa ảnh cũ ${fileName} trên MinIO:`, error);
-      
+      this.logger.error(`Failed to delete object ${fileName} from MinIO`, error);
     }
   }
 }

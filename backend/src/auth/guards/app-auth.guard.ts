@@ -20,12 +20,9 @@ export class AppAuthGuard extends AuthGuard('jwt') {
 
     const isValidJwt = await super.canActivate(context);
     if (!isValidJwt) return false;
+    
     const request = context.switchToHttp().getRequest<RequestWithCookies>();
-    
-
     const cookieToken = request.cookies['xsrf_token'];
-    
-
     const headerToken = request.headers['x-xsrf-token'];
 
     if (!cookieToken || cookieToken !== headerToken) {

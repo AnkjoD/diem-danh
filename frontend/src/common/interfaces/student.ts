@@ -1,27 +1,24 @@
 export interface StudentData {
-  _id: string;
-  student_id: string;
-  full_name: string;
-  date_of_birth?: string;
-  email?: string;
-  phone?: string;
-  image_url?: string;
+  id: string;
+  name: string;
+  student_code: string;
+  email: string | null;
+  teacher_id: string | null;
+  face_descriptor: number[] | null;
+  photo_url: string | null;
+  created_at: string;
 }
 
-export interface AddStudentPayload {
-  course_id: string;
-  student_id: string;
-  full_name: string;
-  date_of_birth: string;
-  email: string;
-  phone: string;
-  images: string[];
+export interface CreateStudentPayload {
+  name: string;
+  student_code: string;
+  email?: string;
+  teacher_id?: string;
 }
 
 export interface AiRecognizeResponse {
-  status: string;
-  student_id: string | null;
-  distance: number | null;
+  success: boolean;
   message: string;
-  full_name: string | null;
+  students?: StudentData[];
+  distances?: number[];
 }

@@ -1,16 +1,26 @@
 export interface CourseData {
-  _id: string;
-  course_name: string;
-  term: string;
-  course_type: string;
-  student_list: string[];
-  is_active: boolean;
-  createdAt?: string;
-  updatedAt?: string;
+  id: string;
+  name: string;
+  teacher_id: string | null;
+  created_at: string;
 }
 
 export interface CreateCoursePayload {
-  course_name: string;
-  term: string;
-  course_type: string;
+  name: string;
+  teacher_id?: string;
+}
+
+export interface ClassData {
+  id: string;
+  name: string;
+  type: 'theory' | 'practice' | 'both';
+  course: CourseData;
+  studentCount?: number;
+  created_at: string;
+}
+
+export interface CreateClassPayload {
+  name: string;
+  type: 'theory' | 'practice' | 'both';
+  course_id: string;
 }

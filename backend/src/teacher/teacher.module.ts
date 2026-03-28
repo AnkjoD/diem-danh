@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
-import { MongooseModule } from '@nestjs/mongoose';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { TeacherService } from './teacher.service';
 import { TeacherController } from './teacher.controller';
-import { Teacher, TeacherSchema } from './schemas/teacher.schema';
+import { Teacher } from './entities/teacher.entity';
 
 @Module({
-  imports: [MongooseModule.forFeature([{ name: Teacher.name, schema: TeacherSchema }])],
+  imports: [TypeOrmModule.forFeature([Teacher])],
   controllers: [TeacherController],
   providers: [TeacherService],
   exports: [TeacherService],

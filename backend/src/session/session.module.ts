@@ -1,14 +1,15 @@
 import { Module } from '@nestjs/common';
-import { MongooseModule } from '@nestjs/mongoose';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { SessionService } from './session.service';
 import { SessionController } from './session.controller';
-import { Session, SessionSchema } from './schemas/session.schema';
-
+import { Session } from './entities/session.entity';
+import { ClassStudent } from '../class-student/entities/class-student.entity';
+import { Attendance } from '../attendance/entities/attendance.entity';
 
 @Module({
-  imports: [MongooseModule.forFeature([{ name: Session.name, schema: SessionSchema }])],
+  imports: [TypeOrmModule.forFeature([Session, ClassStudent, Attendance])],
   controllers: [SessionController],
   providers: [SessionService],
-  exports: [SessionService],
+  exports: [SessionService]
 })
 export class SessionModule {}

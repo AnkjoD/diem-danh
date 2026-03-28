@@ -1,29 +1,28 @@
-import { Exclude, Expose, Transform } from 'class-transformer';
-import { Types } from 'mongoose';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
-export class TeacherEntity {
-  @Expose()
-  @Transform(({ value }: { value: string | Types.ObjectId }) => value?.toString())
-  _id: string | Types.ObjectId;
+@Entity('teachers')
+export class Teacher {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
+  @Column()
   full_name: string;
+
+  @Column({ unique: true })
   email: string;
-  phone: string | null;
+
+  @Column({ nullable: true })
+  phone: string;
+
+  @Column({ default: true })
   is_active: boolean;
 
-  @Exclude()
+  @Column()
   password: string;
 
-  @Exclude()
-  __v: number;
+  @CreateDateColumn()
+  created_at: Date;
 
-  @Exclude()
-  createdAt: Date;
-
-  @Exclude()
-  updatedAt: Date;
-
-  constructor(partial: Partial<TeacherEntity>) {
-    Object.assign(this, partial);
-  }
+  @UpdateDateColumn()
+  updated_at: Date;
 }

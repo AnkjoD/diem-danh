@@ -3,6 +3,6 @@ uvicorn
 python-multipart
 onnxruntime
 faiss-cpu
-opencv-python
+opencv-python-headless
 numpy
 pydantic

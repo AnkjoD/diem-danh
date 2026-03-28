@@ -27,5 +27,5 @@ class FaceAligner(IFaceAligner):
             (112, 112), 
             borderValue=0.0
         )
-        
+    
         return aligned_face

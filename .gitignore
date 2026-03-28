@@ -1,6 +1,25 @@
-# Bỏ qua các file model AI
+# AI Models & Data
 *.onnx
-*.pt
-*.pth
-*.h5
+*.bin
 ai/models/
+ai/databases/
+
+# Directories
+node_modules/
+.next/
+dist/
+build/
+.venv/
+__pycache__/
+
+# Docker / DB Volumes
+postgres_data/
+minio_data/
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db

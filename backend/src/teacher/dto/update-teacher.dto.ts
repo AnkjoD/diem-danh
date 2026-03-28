@@ -1,4 +1,4 @@
-import { OmitType} from '@nestjs/mapped-types';
+import { PartialType } from '@nestjs/mapped-types';
 import { CreateTeacherDto } from './create-teacher.dto';
 
-export class UpdateTeacherDto extends OmitType(CreateTeacherDto, ['password']) {}
+export class UpdateTeacherDto extends PartialType(CreateTeacherDto) {}

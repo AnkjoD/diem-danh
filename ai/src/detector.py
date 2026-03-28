@@ -114,7 +114,7 @@ class FaceDetector:
         input_size = kwargs.get('input_size', None)
         if input_size is not None:
             if self.input_size is not None:
-                print('warning: det_size is already set in scrfd model, ignore')
+                pass
             else:
                 self.input_size = input_size
 

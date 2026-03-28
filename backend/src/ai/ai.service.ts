@@ -8,7 +8,13 @@ import { RegisterResponse } from './interfaces/register-response';
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
-  private readonly aiUrl = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+  private readonly aiUrl = process.env.AI_SERVICE_URL;
+
+  constructor() {
+    if (!this.aiUrl) {
+      throw new Error('AI_SERVICE_URL is not defined in environment variables');
+    }
+  }
 
   public async deleteFace(studentId: string): Promise<boolean> {
     try {

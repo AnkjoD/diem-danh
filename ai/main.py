@@ -3,7 +3,7 @@ import numpy as np
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Literal
 
 from src.detector import FaceDetector
 from src.aligner import FaceAligner
@@ -21,21 +21,22 @@ app.add_middleware(
 )
 
 # INIT MODELS
-detector = FaceDetector(model_path="./models/scrfd.onnx")
+detector = FaceDetector(model_path="./models/detector.onnx")
 detector.prepare(ctx_id=-1, nms_thresh=0.4)
 aligner = FaceAligner()
-recognizer = FaceRecognizer(model_path="./models/webface_r50_pfc.onnx")
+recognizer = FaceRecognizer(model_path="./models/recognizer.onnx")
 matcher = FaceMatcher(dimension=512)
 
 class RecognizeResponse(BaseModel):
     status: str
-    student_id: Optional[str] = None
-    distance: Optional[float] = None
+    student_ids: list[str] = []
+    distances: list[float] = []
     message: str
 
 class RegisterResponse(BaseModel):
     status: str
     message: str
+    embedding: Optional[list[float]] = None
 
 async def process_upload(file: UploadFile) -> np.ndarray:
     image_bytes = await file.read()
@@ -46,31 +47,59 @@ async def process_upload(file: UploadFile) -> np.ndarray:
   
     return img
 
-def get_face_vector(image: np.ndarray) -> Optional[np.ndarray]:
-    bboxes, landmarks = detector.detect(image, thresh=0.5, input_size=(640, 640))
-    if bboxes is None or bboxes.shape[0] == 0 or landmarks is None:
+def get_face_vector(image: np.ndarray, mode: Literal["register", "recognize"] = "recognize") -> Optional[np.ndarray]:
+    detection_result = detector.detect(image, thresh=0.5, input_size=(640, 640))
+    
+    # Debug/Robust unpacking: detect should return (det, kps)
+    if not isinstance(detection_result, (tuple, list)) or len(detection_result) < 2:
         return None
+    
+    det, landmarks = detection_result[0], detection_result[1]
+    
+    if det is None or det.shape[0] == 0 or landmarks is None:
+        return None
+        
+    if mode == "recognize":
+        recognized_faces = []
+        for landmark in landmarks:
+            aligned_face = aligner.align(image, landmark)
+            recognized_face = recognizer.recognize(aligned_face)
+            recognized_faces.append(recognized_face)
+        return recognized_faces
+    else:
+        # For registration, pick the largest face
+        # bboxes are the first 4 columns of det
+        bboxes = det[:, 0:4]
+        areas = (bboxes[:, 2] - bboxes[:, 0]) * (bboxes[:, 3] - bboxes[:, 1])
+        max_area_idx = np.argmax(areas)
+        
+        aligned_face = aligner.align(image, landmarks[max_area_idx])   
+        embedding = recognizer.recognize(aligned_face)
+        return embedding
 
-    max_area_idx = np.argmax((bboxes[:, 2] - bboxes[:, 0]) * (bboxes[:, 3] - bboxes[:, 1]))
-    aligned_face = aligner.align(image, landmarks[max_area_idx])
-   
-    return recognizer.recognize(aligned_face)
+
 
 @app.post("/recognize", response_model=RecognizeResponse)
 async def recognize(file: UploadFile = File(...)):
     img = await process_upload(file)
-    embedding = get_face_vector(img)
+    embeddings = get_face_vector(img, "recognize")
     
-    if embedding is None:
+    if embeddings is None or len(embeddings) == 0:
         return RecognizeResponse(status="failed", message="No face detected")
-        
-    student_id, distance = matcher.search_face(embedding, threshold=1.2)
     
-    if student_id:
+    student_ids = []
+    distances = []
+    for embedding in embeddings:
+        student_id, distance = matcher.search_face(embedding, threshold=1.2)
+        if student_id and distance:
+            student_ids.append(student_id)
+            distances.append(float(distance))
+    
+    if len(student_ids) > 0:
         return RecognizeResponse(
             status="success", 
-            student_id=student_id, 
-            distance=float(distance), 
+            student_ids=student_ids, 
+            distances=distances, 
             message="Match"
         )
     return RecognizeResponse(status="unknown", message="Face not found in DB")
@@ -78,13 +107,13 @@ async def recognize(file: UploadFile = File(...)):
 @app.post("/register", response_model=RegisterResponse)
 async def register(student_id: str = Form(...), file: UploadFile = File(...)):
     img = await process_upload(file)
-    embedding = get_face_vector(img)
+    embedding = get_face_vector(img, "register")
     
     if embedding is None:
         raise HTTPException(status_code=400, detail="No face detected")
         
     matcher.add_face(embedding, student_id)
-    return RegisterResponse(status="success", message=f"Registered {student_id}")
+    return RegisterResponse(status="success", message=f"Registered {student_id}", embedding=embedding.tolist())
 
 # Thêm cái này vào cùng chỗ với các API /recognize và /register
 @app.delete("/delete/{student_id}")
