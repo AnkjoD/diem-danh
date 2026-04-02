@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box, Typography, Paper, Select, MenuItem, FormControl, InputLabel,
   Table, TableHead, TableBody, TableRow, TableCell, TableContainer, Chip, Button,
-  TextField, Dialog, DialogTitle, DialogContent, IconButton, DialogActions
+  TextField, Dialog, DialogTitle, DialogContent, IconButton, DialogActions,
+  LinearProgress, Badge, Avatar
 } from '@mui/material';
 import PeopleIcon from '@mui/icons-material/People';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -309,6 +310,7 @@ const StatsPanel = () => {
                 <TableCell align="center">Vắng</TableCell>
                 <TableCell align="center">Muộn</TableCell>
                 <TableCell align="center">Tổng</TableCell>
+                <TableCell align="center">Tiến độ</TableCell>
                 <TableCell align="center">Chi Tiết</TableCell>
               </TableRow>
             </TableHead>
@@ -318,13 +320,26 @@ const StatsPanel = () => {
                 const p = records.filter((r: any) => r.status === 'present').length;
                 const a = records.filter((r: any) => r.status === 'absent').length;
                 const l = records.filter((r: any) => r.status === 'late').length;
+                const total = records.length;
+                const progress = total > 0 ? ((p + l) / total) * 100 : 0;
+                
                 return (
                   <TableRow key={s.id} hover>
-                    <TableCell>{s.displayDate}</TableCell>
-                    <TableCell align="center"><Chip label={p} color="success" size="small" /></TableCell>
-                    <TableCell align="center"><Chip label={a} color="error" size="small" /></TableCell>
-                    <TableCell align="center"><Chip label={l} color="warning" size="small" /></TableCell>
-                    <TableCell align="center">{records.length}</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>{s.displayDate}</TableCell>
+                    <TableCell align="center"><Chip label={p} color="success" size="small" variant="outlined" sx={{ fontWeight: 'bold' }} /></TableCell>
+                    <TableCell align="center"><Chip label={a} color="error" size="small" variant="outlined" sx={{ fontWeight: 'bold' }} /></TableCell>
+                    <TableCell align="center"><Chip label={l} color="warning" size="small" variant="outlined" sx={{ fontWeight: 'bold' }} /></TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 'bold' }}>{total}</TableCell>
+                    <TableCell align="center" sx={{ minWidth: 120 }}>
+                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                         <LinearProgress 
+                           variant="determinate" 
+                           value={progress} 
+                           sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.05)' }} 
+                         />
+                         <Typography variant="caption" sx={{ minWidth: 25 }}>{Math.round(progress)}%</Typography>
+                       </Box>
+                    </TableCell>
                     <TableCell align="center">
                        <Button size="small" variant="outlined" onClick={() => setDetailsDialog(s)}>Xem</Button>
                     </TableCell>
@@ -348,82 +363,151 @@ const StatsPanel = () => {
            Chi Tiết Điểm Danh - {detailsDialog ? detailsDialog.displayDate : ''}
         </DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-           <TextField 
-             size="small" 
-             placeholder="Tìm MSSV hoặc tên học sinh..." 
-             autoFocus
-             value={searchAttTerm}
-             onChange={(e) => setSearchAttTerm(e.target.value)}
-             sx={{ mt: 1 }}
-           />
-           <TableContainer component={Paper} variant="outlined">
-             <Table size="small">
-               <TableHead>
-                 <TableRow>
-                   <TableCell>Họ tên</TableCell>
-                   <TableCell>MSSV</TableCell>
-                   <TableCell align="center">Trạng thái</TableCell>
-                   <TableCell align="center">Xóa/Gỡ</TableCell>
-                 </TableRow>
-               </TableHead>
-               <TableBody>
-                 {(detailsDialog?.attendances || [])
-                   .filter((r: any) => r.student?.name.toLowerCase().includes(searchAttTerm.toLowerCase()) || r.student?.student_code.toLowerCase().includes(searchAttTerm.toLowerCase()))
-                   .map((r: any) => (
-                     <TableRow key={r.id}>
-                       <TableCell>{r.student?.name}</TableCell>
-                       <TableCell>{r.student?.student_code}</TableCell>
-                       <TableCell align="center">
-                         <Select
-                           value={r.status}
-                           size="small"
-                           onChange={(e) => {
-                             const newStatus = e.target.value;
-                             markManualMut.mutate({ session_id: r.sessionId, student_id: r.student.id, status: newStatus });
-                             setDetailsDialog({ 
-                               ...detailsDialog, 
-                               attendances: detailsDialog.attendances.map((x: any) => x.id === r.id ? { ...x, status: newStatus } : x) 
-                             });
-                           }}
-                           sx={{ 
-                             height: 32, 
-                             fontSize: '0.8125rem',
-                             '& .MuiSelect-select': { py: 0.5, display: 'flex', alignItems: 'center' },
-                             minWidth: 120,
-                             bgcolor: r.status === 'present' ? 'rgba(34,197,94,0.1)' : r.status === 'late' ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)',
-                             color: r.status === 'present' ? '#16a34a' : r.status === 'late' ? '#d97706' : '#dc2626',
-                             fontWeight: 600,
-                             borderRadius: 2,
-                             '& fieldset': { border: 'none' }
-                           }}
-                         >
-                           <MenuItem value="present">Có mặt</MenuItem>
-                           <MenuItem value="late">Vào muộn</MenuItem>
-                           <MenuItem value="absent">Vắng mặt</MenuItem>
-                         </Select>
-                       </TableCell>
-                       <TableCell align="center">
-                         {r.status !== 'absent' && (
-                           <IconButton color="error" size="small" onClick={() => {
-                              setConfirmDialog({
-                                title: 'Gỡ điểm danh',
-                                message: `Bạn có chắc chắn muốn gỡ điểm danh của học sinh ${r.student?.name}?\nHành động này sẽ xóa hoàn toàn ảnh minh chứng khỏi hệ thống lưu trữ (MinIO) và không thể hoàn tác!`,
-                                 onConfirm: () => {
-                                    markManualMut.mutate({ session_id: r.sessionId, student_id: r.student.id, status: 'absent' });
-                                    setDetailsDialog({ ...detailsDialog, attendances: detailsDialog.attendances.map((x: any) => x.id === r.id ? { ...x, status: 'absent' } : x) });
-                                    setConfirmDialog(null);
-                                 }
-                              });
-                           }} disabled={markManualMut.isPending}>
-                             <DeleteIcon fontSize="small" />
-                           </IconButton>
-                         )}
-                       </TableCell>
-                     </TableRow>
-                   ))}
-               </TableBody>
-             </Table>
-           </TableContainer>
+          {(() => {
+             const allRecords = (detailsDialog?.attendances || []);
+             const filtered = allRecords.filter((r: any) => 
+               r.student?.name.toLowerCase().includes(searchAttTerm.toLowerCase()) || 
+               r.student?.student_code.toLowerCase().includes(searchAttTerm.toLowerCase())
+             );
+             
+             const p = allRecords.filter((r: any) => r.status === 'present').length;
+             const l = allRecords.filter((r: any) => r.status === 'late').length;
+             const a = allRecords.filter((r: any) => r.status === 'absent').length;
+             const total = allRecords.length;
+             const prog = total > 0 ? ((p + l) / total) * 100 : 0;
+
+             return (
+               <>
+                <Paper elevation={0} sx={{ 
+                  p: 2.5, 
+                  bgcolor: 'rgba(255,255,255,0.03)', 
+                  borderRadius: 3, 
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  mb: 1,
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
+                    <Box sx={{ flex: 1, minWidth: 200 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                         <Typography variant="caption" color="text.secondary" fontWeight="bold" sx={{ letterSpacing: 1.1 }}>
+                           TIẾN ĐỘ BUỔI HỌC ({p+l}/{total})
+                         </Typography>
+                         <Typography variant="subtitle2" color="primary" fontWeight="bold">{Math.round(prog)}%</Typography>
+                      </Box>
+                      <LinearProgress 
+                        variant="determinate" 
+                        value={prog} 
+                        sx={{ height: 10, borderRadius: 5, bgcolor: 'rgba(255,255,255,0.08)', '& .MuiLinearProgress-bar': { borderRadius: 5 } }} 
+                      />
+                    </Box>
+                    
+                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                      <Badge badgeContent={p} color="success" showZero overlap="rectangular">
+                        <Chip label="Có mặt" size="small" color="success" variant="outlined" sx={{ fontWeight: 600, py: 1.8 }} />
+                      </Badge>
+                      <Badge badgeContent={l} color="warning" showZero overlap="rectangular">
+                        <Chip label="Đi muộn" size="small" color="warning" variant="outlined" sx={{ fontWeight: 600, py: 1.8 }} />
+                      </Badge>
+                      <Badge badgeContent={a} color="error" showZero overlap="rectangular">
+                        <Chip label="Vắng" size="small" color="error" variant="outlined" sx={{ fontWeight: 600, py: 1.8, opacity: 0.8 }} />
+                      </Badge>
+                    </Box>
+                  </Box>
+                </Paper>
+
+                <TextField 
+                  size="small" 
+                  placeholder="Tìm MSSV hoặc tên học sinh..." 
+                  autoFocus
+                  value={searchAttTerm}
+                  onChange={(e) => setSearchAttTerm(e.target.value)}
+                  fullWidth
+                />
+
+                <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3, border: '1px solid rgba(255,255,255,0.1)' }}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Họ tên</TableCell>
+                        <TableCell>MSSV</TableCell>
+                        <TableCell align="center">Trạng thái</TableCell>
+                        <TableCell align="center">Thao tác</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {filtered.map((r: any) => (
+                        <TableRow key={r.id}>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                              <Badge
+                                overlap="circular"
+                                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                                variant="dot"
+                                color={r.status === 'present' ? 'success' : r.status === 'late' ? 'warning' : 'error'}
+                                sx={{ '& .MuiBadge-badge': { width: 10, height: 10, borderRadius: '50%', border: '2px solid #1e1e1e', bgcolor: r.status === 'absent' ? '#666' : undefined } }}
+                              >
+                                <Avatar src={r.student?.photo_url || undefined} sx={{ width: 32, height: 32 }} imgProps={{ crossOrigin: 'anonymous' }}>
+                                  {r.student?.name[0]}
+                                </Avatar>
+                              </Badge>
+                              <Typography variant="body2" fontWeight={500}>{r.student?.name}</Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell sx={{ fontFamily: 'monospace' }}>{r.student?.student_code}</TableCell>
+                          <TableCell align="center">
+                            <Select
+                              value={r.status}
+                              size="small"
+                              onChange={(e) => {
+                                const newStatus = e.target.value;
+                                markManualMut.mutate({ session_id: r.sessionId, student_id: r.student.id, status: newStatus });
+                                setDetailsDialog({ 
+                                  ...detailsDialog, 
+                                  attendances: detailsDialog.attendances.map((x: any) => x.id === r.id ? { ...x, status: newStatus } : x) 
+                                });
+                              }}
+                              sx={{ 
+                                height: 32, 
+                                fontSize: '0.8125rem',
+                                '& .MuiSelect-select': { py: 0.5, display: 'flex', alignItems: 'center' },
+                                minWidth: 120,
+                                bgcolor: r.status === 'present' ? 'rgba(34,197,94,0.1)' : r.status === 'late' ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)',
+                                color: r.status === 'present' ? '#16a34a' : r.status === 'late' ? '#d97706' : '#dc2626',
+                                fontWeight: 600,
+                                borderRadius: 2,
+                                '& fieldset': { border: 'none' }
+                              }}
+                            >
+                              <MenuItem value="present">Có mặt</MenuItem>
+                              <MenuItem value="late">Vào muộn</MenuItem>
+                              <MenuItem value="absent">Vắng mặt</MenuItem>
+                            </Select>
+                          </TableCell>
+                          <TableCell align="center">
+                            {r.status !== 'absent' && (
+                              <IconButton color="error" size="small" onClick={() => {
+                                 setConfirmDialog({
+                                   title: 'Gỡ điểm danh',
+                                   message: `Bạn có chắc chắn muốn gỡ điểm danh của học sinh ${r.student?.name}?\nHành động này sẽ xóa hoàn toàn ảnh minh chứng khỏi hệ thống lưu trữ (MinIO) và không thể hoàn tác!`,
+                                    onConfirm: () => {
+                                       markManualMut.mutate({ session_id: r.sessionId, student_id: r.student.id, status: 'absent' });
+                                       setDetailsDialog({ ...detailsDialog, attendances: detailsDialog.attendances.map((x: any) => x.id === r.id ? { ...x, status: 'absent' } : x) });
+                                       setConfirmDialog(null);
+                                    }
+                                 });
+                              }} disabled={markManualMut.isPending}>
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </>
+             );
+           })()}
         </DialogContent>
         <DialogActions>
            <Button onClick={() => setDetailsDialog(null)}>Đóng</Button>

@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box, Typography, Paper, Button, Select, MenuItem, FormControl, InputLabel,
   Alert, Chip, Table, TableHead, TableBody, TableRow, TableCell, TableContainer,
-  Avatar, CircularProgress, TextField
+  Avatar, CircularProgress, TextField, Badge, LinearProgress
 } from '@mui/material';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -24,7 +24,7 @@ const FaceAttendancePanel = () => {
   const [selectedSubject, setSelectedSubject] = useState('');
   const [selectedClass, setSelectedClass] = useState('');
   const queryClient = useQueryClient();
-  const [recognized, setRecognized] = useState<Set<string>>(new Set());
+  const [recognized, setRecognized] = useState<Map<string, string>>(new Map());
   const [scanning, setScanning] = useState(false);
   const [searchAttTerm, setSearchAttTerm] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -48,6 +48,12 @@ const FaceAttendancePanel = () => {
     queryFn: () => getTodaySession(selectedClass),
     enabled: !!selectedClass,
   });
+
+  useEffect(() => {
+    if (scanning) {
+      stopScanning();
+    }
+  }, [selectedClass, selectedSubject]);
 
   useEffect(() => {
     if (todaySession) {
@@ -77,15 +83,18 @@ const FaceAttendancePanel = () => {
         setEndThreshold(localStorage.getItem(`end_${selectedClass}`) || '');
       }
 
-      const presentIds = (todaySession.attendances || [])
-        .filter((a: AttendanceData) => a.status === 'present' || a.status === 'late')
-        .map((a: AttendanceData) => a.student.id);
-      setRecognized(new Set(presentIds));
+      const statusMap = new Map();
+      (todaySession.attendances || []).forEach((a: AttendanceData) => {
+        if (a.status === 'present' || a.status === 'late') {
+          statusMap.set(a.student.id, a.status);
+        }
+      });
+      setRecognized(statusMap);
     } else {
       setSessionId(null);
       setLateThreshold(localStorage.getItem(`late_${selectedClass}`) || '');
       setEndThreshold(localStorage.getItem(`end_${selectedClass}`) || '');
-      setRecognized(new Set());
+      setRecognized(new Map());
     }
   }, [todaySession, selectedClass]);
 
@@ -167,6 +176,10 @@ const FaceAttendancePanel = () => {
   const unregisteredCount = classStudents.filter((s: StudentData) => !s.face_descriptor).length;
   const noRegisteredStudents = classStudents.length > 0 && unregisteredCount === classStudents.length;
 
+  const recognizedCount = recognized.size;
+  const totalStudents = classStudents.length;
+  const attendanceProgress = totalStudents > 0 ? (recognizedCount / totalStudents) * 100 : 0;
+
   const createSessionMut = useMutation({
     mutationFn: () => {
       if (lateThreshold && endThreshold && !validateTimes(lateThreshold, endThreshold)) throw new Error('Invalid times');
@@ -194,7 +207,7 @@ const FaceAttendancePanel = () => {
     },
     onSuccess: (data) => {
       setSessionId(data.id);
-      setRecognized(new Set());
+      setRecognized(new Map());
       queryClient.invalidateQueries({ queryKey: ['today_session', selectedClass] });
       startMediaStream();
     },
@@ -208,9 +221,13 @@ const FaceAttendancePanel = () => {
     mutationFn: ({ blob, sId }: { blob: Blob, sId: string }) => recognizeAttendanceFace(sId, blob, 'frame.jpg'),
     onSuccess: (res) => {
       if (res.success && res.students && res.students.length > 0) {
-        const studentIds = res.students.map(s => s.id);
-        setRecognized(prev => new Set([...prev, ...studentIds]));
+        const newStatusMap = new Map(recognized);
+        res.students.forEach(s => {
+          newStatusMap.set(s.id, 'present'); 
+        });
+        setRecognized(newStatusMap);
         setScanResult({ type: 'success', students: res.students });
+        queryClient.invalidateQueries({ queryKey: ['today_session', selectedClass] });
       } else {
         setScanResult({ type: 'error', message: res.message || 'Hệ thống báo lỗi xử lý!' });
       }
@@ -280,7 +297,7 @@ const FaceAttendancePanel = () => {
       try {
         const sessionData = await createSession({ class_id: selectedClass });
         setSessionId(sessionData.id);
-        setRecognized(new Set());
+        setRecognized(new Map());
         currentSessionId = sessionData.id;
       } catch (err: any) {
         setScanResult({ type: 'error', message: 'Lỗi tạo phiên điểm danh: ' + err.message });
@@ -524,6 +541,56 @@ const FaceAttendancePanel = () => {
               disabled={classStudents.length === 0}
             />
           </Box>
+          {selectedClass && classStudents.length > 0 && (
+            <Paper elevation={0} sx={{ 
+              mb: 2, p: 2, 
+              bgcolor: 'rgba(255,255,255,0.03)', 
+              borderRadius: 3, 
+              border: '1px solid rgba(255,255,255,0.08)',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.1)' 
+            }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
+                <Box sx={{ flex: 1, minWidth: 200 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="caption" color="text.secondary" fontWeight="bold" sx={{ letterSpacing: 1.2 }}>
+                      TIẾN ĐỘ ĐIỂM DANH ({recognizedCount}/{totalStudents})
+                    </Typography>
+                    <Typography variant="subtitle2" color="primary" fontWeight="bold">
+                      {Math.round(attendanceProgress)}%
+                    </Typography>
+                  </Box>
+                  <LinearProgress 
+                    variant="determinate" 
+                    value={attendanceProgress} 
+                    sx={{ 
+                      height: 10, 
+                      borderRadius: 5, 
+                      bgcolor: 'rgba(255,255,255,0.08)', 
+                      '& .MuiLinearProgress-bar': { borderRadius: 5, transition: 'transform 0.4s ease' } 
+                    }} 
+                  />
+                </Box>
+                
+                <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Badge badgeContent={Array.from(recognized.values()).filter(v => v === 'present').length} color="success" showZero overlap="rectangular" sx={{ '& .MuiBadge-badge': { fontWeight: 'bold' } }}>
+                       <Chip label="Có mặt" size="small" sx={{ fontWeight: 600, py: 1.8, px: 0.5, bgcolor: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }} color="success" variant="outlined" />
+                    </Badge>
+                  </Box>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Badge badgeContent={Array.from(recognized.values()).filter(v => v === 'late').length} color="warning" showZero overlap="rectangular" sx={{ '& .MuiBadge-badge': { fontWeight: 'bold' } }}>
+                       <Chip label="Đi muộn" size="small" sx={{ fontWeight: 600, py: 1.8, px: 0.5, bgcolor: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)' }} color="warning" variant="outlined" />
+                    </Badge>
+                  </Box>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Badge badgeContent={totalStudents - recognized.size} color="error" showZero overlap="rectangular" sx={{ '& .MuiBadge-badge': { fontWeight: 'bold' } }}>
+                       <Chip label="Vắng" size="small" sx={{ fontWeight: 600, py: 1.8, px: 0.5, opacity: 0.8, bgcolor: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }} color="error" variant="outlined" />
+                    </Badge>
+                  </Box>
+                </Box>
+              </Box>
+            </Paper>
+          )}
           {classStudents.length > 0 ? (() => {
             const filteredClassStudents = classStudents.filter((s: StudentData) => 
                s.name.toLowerCase().includes(searchAttTerm.toLowerCase()) || 
@@ -543,17 +610,38 @@ const FaceAttendancePanel = () => {
                 <TableBody>
                   {filteredClassStudents.map((s: StudentData) => (
                     <TableRow key={s.id} sx={{
-                      bgcolor: recognized.has(s.id) ? 'rgba(34,197,94,0.1)' : undefined,
+                      bgcolor: recognized.has(s.id) ? (recognized.get(s.id) === 'late' ? 'rgba(245,158,11,0.1)' : 'rgba(34,197,94,0.1)') : undefined,
                       transition: 'background-color 0.5s',
                     }}>
                       <TableCell>
-                        <Avatar src={s.photo_url || undefined} sx={{ width: 32, height: 32 }} imgProps={{ crossOrigin: 'anonymous' }}>{s.name[0]}</Avatar>
+                        <Badge
+                          overlap="circular"
+                          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                          variant="dot"
+                          color={recognized.get(s.id) === 'present' ? "success" : recognized.get(s.id) === 'late' ? "warning" : "error"}
+                          sx={{ 
+                            '& .MuiBadge-badge': { 
+                              width: 12, 
+                              height: 12, 
+                              borderRadius: '50%', 
+                              border: '2px solid #1e1e1e',
+                              bgcolor: !recognized.has(s.id) ? '#666' : undefined
+                            } 
+                          }}
+                        >
+                          <Avatar src={s.photo_url || undefined} sx={{ width: 32, height: 32 }} imgProps={{ crossOrigin: 'anonymous' }}>{s.name[0]}</Avatar>
+                        </Badge>
                       </TableCell>
                       <TableCell>{s.name}</TableCell>
                       <TableCell sx={{ fontFamily: 'monospace' }}>{s.student_code}</TableCell>
                       <TableCell align="center">
                         {recognized.has(s.id) ? (
-                          <Chip icon={<CheckCircleIcon />} label="Có mặt" color="success" size="small" />
+                          <Chip 
+                            icon={<CheckCircleIcon />} 
+                            label={recognized.get(s.id) === 'late' ? "Đi muộn" : "Có mặt"} 
+                            color={recognized.get(s.id) === 'late' ? "warning" : "success"} 
+                            size="small" 
+                          />
                         ) : (
                           <Chip label="Chưa điểm danh" size="small" variant="outlined" sx={{ opacity: 0.5 }} />
                         )}
