@@ -56,12 +56,14 @@ export class SessionService {
       .leftJoinAndSelect('session.classData', 'class')
       .leftJoinAndSelect('session.attendances', 'attendances')
       .leftJoinAndSelect('attendances.student', 'student')
-      .andWhere('class.teacher_id = :teacherId', { teacherId })
-      .orderBy('session.created_at', 'DESC');
-      
+      .where('class.teacher_id = :teacherId', { teacherId });
+
     if (classId) {
-      query.andWhere('session.class_id = :classId', { classId });
+      query.andWhere('class.id = :classId', { classId });
     }
+
+    query.orderBy('session.created_at', 'DESC');
+    
     return query.getMany();
   }
 

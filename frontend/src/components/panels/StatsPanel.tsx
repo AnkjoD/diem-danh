@@ -18,6 +18,30 @@ import { getSessions } from '@/common/api/session';
 import { markAttendanceManual } from '@/common/api/attendance';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
+const parseSafeDate = (val: any) => {
+  if (!val) return new Date(NaN);
+  if (val instanceof Date) return val;
+  let d = new Date(val);
+  if (!isNaN(d.getTime())) return d;
+  if (typeof val === 'string' && val.trim()) {
+    let fixed = val.trim().replace(' ', 'T');
+    if (fixed.includes('.')) {
+      const parts = fixed.split('.');
+      fixed = parts[0] + '.' + parts[1].substring(0, 3);
+    }
+    d = new Date(fixed);
+    if (!isNaN(d.getTime())) return d;
+
+    // Try extracting only YYYY-MM-DD if full parsing failed
+    const dateMatch = val.match(/^\d{4}-\d{2}-\d{2}/);
+    if (dateMatch) {
+      d = new Date(dateMatch[0]);
+      if (!isNaN(d.getTime())) return d;
+    }
+  }
+  return new Date(NaN);
+};
+
 const StatsPanel = () => {
   const [selectedSubject, setSelectedSubject] = useState('');
   const [selectedClass, setSelectedClass] = useState('');
@@ -35,15 +59,31 @@ const StatsPanel = () => {
 
   const sessionsByDate = useMemo(() => {
     const groups: Record<string, any> = {};
+    // Ensure sessions is an array, handle possible { data: [] } wrapper
+    const rawSessions = Array.isArray(sessions) ? sessions : (sessions as any)?.data || [];
     
-    sessions.forEach((s: any) => {
-      const dateKey = new Date(s.created_at).toISOString().split('T')[0];
+    rawSessions.forEach((s: any, idx: number) => {
+      const dateVal = s.created_at || s.createdAt;
+      let d = parseSafeDate(dateVal);
+      
+      // Fallback to session_id if it's a numeric timestamp
+      if (isNaN(d.getTime())) {
+         const numericId = Number(s.session_id) || Number(s.id); // Try both s.session_id and s.id
+         if (!isNaN(numericId) && numericId > 10000000000) { // Sanity check for timestamp
+            d = new Date(numericId);
+         }
+      }
+      
+      const sessionTime = d.getTime();
+      const finalDateVal = isNaN(sessionTime) ? 'N/A' : dateVal;
+      const dateKey = isNaN(sessionTime) ? 'unknown' : d.toISOString().split('T')[0];
       if (!groups[dateKey]) {
         groups[dateKey] = {
           id: dateKey,
           dateKey,
-          displayDate: new Date(s.created_at).toLocaleDateString('vi-VN'),
-          created_at: s.created_at,
+          displayDate: isNaN(sessionTime) ? 'Không xác định' : d.toLocaleDateString('vi-VN'),
+          created_at: finalDateVal,
+          session_id: s.id || s.session_id,
           attendances: [],
         };
       }
@@ -65,18 +105,34 @@ const StatsPanel = () => {
       });
     });
 
-    return Object.values(groups).sort((a: any, b: any) => 
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
+    return Object.values(groups).sort((a: any, b: any) => {
+      const dateA = parseSafeDate(a.created_at).getTime();
+      const dateB = parseSafeDate(b.created_at).getTime();
+      const fallbackA = isNaN(dateA) ? (Number(a.session_id) || 0) : dateA;
+      const fallbackB = isNaN(dateB) ? (Number(b.session_id) || 0) : dateB;
+      return fallbackB - fallbackA;
+    });
   }, [sessions]);
 
   const filteredSessions = useMemo(() => {
     return sessionsByDate.filter((s: any) => {
-      if (fromDate && new Date(s.created_at) < new Date(fromDate)) return false;
+      const sessionDate = parseSafeDate(s.created_at);
+      const sessionTime = isNaN(sessionDate.getTime()) ? (Number(s.session_id) || 0) : sessionDate.getTime();
+      
+      if (fromDate) {
+        const fDate = parseSafeDate(fromDate);
+        if (!isNaN(fDate.getTime()) && sessionTime < fDate.getTime()) {
+           return false;
+        }
+      }
       if (toDate) {
-        const tDate = new Date(toDate);
-        tDate.setHours(23, 59, 59, 999);
-        if (new Date(s.created_at) > tDate) return false;
+        const tDate = parseSafeDate(toDate);
+        if (!isNaN(tDate.getTime())) {
+          tDate.setHours(23, 59, 59, 999);
+          if (sessionTime > tDate.getTime()) {
+             return false;
+          }
+        }
       }
       return true;
     });
@@ -110,14 +166,31 @@ const StatsPanel = () => {
 
     const rows: any[] = [];
     filteredSessions.forEach((s: any) => {
+      const sessionDate = parseSafeDate(s.created_at);
+      let displayDate = 'N/A';
+      if (!isNaN(sessionDate.getTime())) {
+         displayDate = sessionDate.toLocaleDateString('vi-VN');
+      } else if (s.session_id && !isNaN(Number(s.session_id))) {
+         displayDate = new Date(Number(s.session_id)).toLocaleDateString('vi-VN');
+      }
+      
       (s.attendances || []).forEach((r: any) => {
         const statusMap: Record<string, string> = { present: 'Có mặt', absent: 'Vắng', late: 'Muộn' };
+        
+        let recognizedAtStr = '';
+        if (r.recognized_at) {
+          const recDate = parseSafeDate(r.recognized_at);
+          if (!isNaN(recDate.getTime())) {
+            recognizedAtStr = recDate.toLocaleString('vi-VN');
+          }
+        }
+
         rows.push({
-          'Ngày': new Date(s.created_at).toLocaleDateString('vi-VN'),
+          'Ngày': displayDate,
           'Mã SV': r.student?.student_code || '',
           'Họ tên': r.student?.name || '',
           'Trạng thái': statusMap[r.status] || r.status,
-          'Thời gian nhận diện': r.recognized_at ? new Date(r.recognized_at).toLocaleString('vi-VN') : '',
+          'Thời gian nhận diện': recognizedAtStr,
         });
       });
     });

@@ -52,20 +52,29 @@ const FaceAttendancePanel = () => {
   useEffect(() => {
     if (todaySession) {
       setSessionId(todaySession.id);
+      
+      // Late threshold
       if (todaySession.late_threshold) {
         const date = new Date(todaySession.late_threshold);
-        setLateThreshold(`${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`);
+        if (!isNaN(date.getTime())) {
+          setLateThreshold(`${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`);
+        } else {
+          setLateThreshold(localStorage.getItem(`late_${selectedClass}`) || '');
+        }
       } else {
-        const savedLate = localStorage.getItem(`late_${selectedClass}`);
-        if (savedLate) setLateThreshold(savedLate);
+        setLateThreshold(localStorage.getItem(`late_${selectedClass}`) || '');
       }
       
+      // End threshold
       if (todaySession.end_threshold) {
         const date = new Date(todaySession.end_threshold);
-        setEndThreshold(`${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`);
+        if (!isNaN(date.getTime())) {
+          setEndThreshold(`${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`);
+        } else {
+          setEndThreshold(localStorage.getItem(`end_${selectedClass}`) || '');
+        }
       } else {
-        const savedEnd = localStorage.getItem(`end_${selectedClass}`);
-        if (savedEnd) setEndThreshold(savedEnd);
+        setEndThreshold(localStorage.getItem(`end_${selectedClass}`) || '');
       }
 
       const presentIds = (todaySession.attendances || [])
@@ -74,10 +83,8 @@ const FaceAttendancePanel = () => {
       setRecognized(new Set(presentIds));
     } else {
       setSessionId(null);
-      const savedLate = localStorage.getItem(`late_${selectedClass}`);
-      const savedEnd = localStorage.getItem(`end_${selectedClass}`);
-      setLateThreshold(savedLate || '');
-      setEndThreshold(savedEnd || '');
+      setLateThreshold(localStorage.getItem(`late_${selectedClass}`) || '');
+      setEndThreshold(localStorage.getItem(`end_${selectedClass}`) || '');
       setRecognized(new Set());
     }
   }, [todaySession, selectedClass]);
