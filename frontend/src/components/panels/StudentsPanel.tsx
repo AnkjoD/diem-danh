@@ -6,24 +6,24 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box, Typography, Paper, Button, TextField, Dialog, DialogTitle, DialogContent,
   DialogActions, IconButton, Avatar, Alert, Table, TableHead, TableBody, TableRow,
-  TableCell, TableContainer, Chip, Checkbox,
+  TableCell, Chip, Checkbox, Card, CardContent, CardActions, Menu, MenuItem, Tooltip
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import PersonIcon from '@mui/icons-material/Person';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
-import GridViewIcon from '@mui/icons-material/GridView';
-import ViewListIcon from '@mui/icons-material/ViewList';
 import MailOutlineIcon from '@mui/icons-material/MailOutline';
 import PhoneIphoneIcon from '@mui/icons-material/PhoneIphone';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
-import { 
-  Grid, Card, CardContent, CardActions, Menu, MenuItem, Tooltip, ToggleButton, ToggleButtonGroup
-} from '@mui/material';
 import * as XLSX from 'xlsx';
 import FaceRegistration from '@/components/FaceRegistration';
-import ConfirmDialog from '@/components/ConfirmDialog';
+import { ViewModeToggle } from '../common/ViewModeToggle';
+import { PremiumScrollContainer } from '../common/PremiumScrollContainer';
+import { SectionHeader } from '../common/SectionHeader';
+import { ImportButton } from '../common/ImportButton';
+import { EmptyState } from '../common/EmptyState';
+import { useConfirm } from '@/hooks/useConfirm';
 import { useAuth } from '@/contexts/AuthContext';
 import { getStudents, createStudent, deleteStudent, createBulkStudents, updateStudent } from '@/common/api/student';
 import { StudentData } from '@/common/interfaces/student';
@@ -38,13 +38,13 @@ const studentSchema = z.object({
 const StudentsPanel = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const openConfirm = useConfirm();
   const [addDialog, setAddDialog] = useState(false);
   const [faceDialog, setFaceDialog] = useState<StudentData | null>(null);
   const [editStudent, setEditStudent] = useState<StudentData | null>(null);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [confirmDialog, setConfirmDialog] = useState<any>(null);
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [anchorEl, setAnchorEl] = useState<{ [key: string]: HTMLElement | null }>({});
 
@@ -107,9 +107,7 @@ const StudentsPanel = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't intercept if user is typing in an input (native form will handle it)
       if (document.activeElement?.tagName === 'INPUT') return;
-      
       if (e.key === 'Enter' && addDialog) {
         e.preventDefault();
         form.handleSubmit((data) => {
@@ -159,18 +157,13 @@ const StudentsPanel = () => {
       const wb = XLSX.read(bstr, { type: 'binary' });
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
-      
-      // Đọc dạng mảng để xử lý thông minh
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
       if (rows.length === 0) return;
 
       let startIndex = 0;
       let colMap = { code: 0, name: 1, email: 2, phone: 3 };
-
       const firstRow = rows[0].map(c => String(c || '').toLowerCase().trim());
-      const hasHeader = firstRow.some(c => 
-        ['mssv', 'mã sv', 'mã số', 'họ tên', 'tên', 'email', 'sđt', 'phone'].includes(c)
-      );
+      const hasHeader = firstRow.some(c => ['mssv', 'mã sv', 'mã số', 'họ tên', 'tên', 'email', 'sđt', 'phone'].includes(c));
 
       if (hasHeader) {
         startIndex = 1;
@@ -178,29 +171,22 @@ const StudentsPanel = () => {
         colMap.name = firstRow.findIndex(c => ['họ tên', 'tên', 'name', 'full name'].includes(c));
         colMap.email = firstRow.findIndex(c => ['email', 'thư điện tử', 'mail'].includes(c));
         colMap.phone = firstRow.findIndex(c => ['sđt', 'số điện thoại', 'phone', 'tel'].includes(c));
-        
-        // Fallbacks if some columns not found by name
         if (colMap.code === -1) colMap.code = 0;
         if (colMap.name === -1) colMap.name = 1;
         if (colMap.email === -1) colMap.email = 2;
         if (colMap.phone === -1) colMap.phone = 3;
       }
 
-      const formatted = rows.slice(startIndex).map((row: any[]) => {
-        return {
-          student_code: String(row[colMap.code] || '').trim(),
-          name: String(row[colMap.name] || '').trim(),
-          email: colMap.email !== -1 ? String(row[colMap.email] || '').trim() : '',
-          phone: colMap.phone !== -1 ? String(row[colMap.phone] || '').trim() : '',
-          teacher_id: user?.id,
-        };
-      }).filter(s => s.student_code && (startIndex === 0 || s.name));
+      const formatted = rows.slice(startIndex).map((row: any[]) => ({
+        student_code: String(row[colMap.code] || '').trim(),
+        name: String(row[colMap.name] || '').trim(),
+        email: colMap.email !== -1 ? String(row[colMap.email] || '').trim() : '',
+        phone: colMap.phone !== -1 ? String(row[colMap.phone] || '').trim() : '',
+        teacher_id: user?.id,
+      })).filter(s => s.student_code && (startIndex === 0 || s.name));
       
-      if (formatted.length > 0) {
-        bulkCreateMut.mutate(formatted);
-      } else {
-        setError('Không tìm thấy dữ liệu hợp lệ trong file');
-      }
+      if (formatted.length > 0) bulkCreateMut.mutate(formatted);
+      else setError('Không tìm thấy dữ liệu hợp lệ trong file');
     };
     reader.readAsBinaryString(file);
     e.target.value = '';
@@ -208,59 +194,53 @@ const StudentsPanel = () => {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' }, gap: 2, mb: 3 }}>
-        <Typography variant="h4" fontFamily='"Cinzel", serif'>Học Sinh</Typography>
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-          <TextField 
-            size="small" 
-            placeholder="Tìm MSSV hoặc tên..." 
-            variant="outlined" 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            sx={{ minWidth: 200 }}
-          />
-          {selected.length > 0 && (
-            <Button 
+      <SectionHeader 
+        title="Học Sinh" 
+        actions={
+          <>
+            <TextField 
+              size="small" 
+              placeholder="Tìm MSSV hoặc tên..." 
               variant="outlined" 
-              color="error" 
-              startIcon={<DeleteIcon />} 
-              onClick={() => {
-                setConfirmDialog({
-                  title: 'Xóa hàng loạt',
-                  message: `Bạn có chắc chắn muốn xóa hồ sơ của ${selected.length} học sinh ra khỏi hệ thống?\n(Dữ liệu điểm danh cũng sẽ bị ảnh hưởng)`,
-                  showArchiveOption: true,
-                  onConfirm: (archive: boolean) => { bulkDeleteMut.mutate({ ids: selected, archive }); setConfirmDialog(null); }
-                });
-              }}
-              disabled={bulkDeleteMut.isPending}
-            >
-              Xoá {selected.length} HS
-            </Button>
-          )}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Button variant="outlined" component="label" disabled={bulkCreateMut.isPending}>
-              Nhập Excel/CSV
-              <input type="file" hidden accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" onChange={handleFileUpload} />
-            </Button>
-            <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', lg: 'block' } }}>Tên cột: mssv, name, email, phone</Typography>
-          </Box>
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              sx={{ minWidth: 200 }}
+            />
+            {selected.length > 0 && (
+              <Button 
+                variant="outlined" 
+                color="error" 
+                startIcon={<DeleteIcon />} 
+                onClick={() => {
+                  openConfirm({
+                    title: 'Xóa hàng loạt',
+                    message: `Bạn có chắc chắn muốn xóa hồ sơ của ${selected.length} học sinh ra khỏi hệ thống?\n(Dữ liệu điểm danh cũng sẽ bị ảnh hưởng)`,
+                    showArchiveOption: true,
+                    onConfirm: (archive: any) => bulkDeleteMut.mutate({ ids: selected, archive: !!archive }),
+                    isPending: bulkDeleteMut.isPending
+                  });
+                }}
+                disabled={bulkDeleteMut.isPending}
+              >
+                Xoá {selected.length} HS
+              </Button>
+            )}
+            
+            <ImportButton 
+              onFileSelect={handleFileUpload} 
+              disabled={bulkCreateMut.isPending} 
+            />
 
-          <ToggleButtonGroup
-            value={viewMode}
-            exclusive
-            onChange={(_, val) => val && setViewMode(val)}
-            size="small"
-            sx={{ bgcolor: 'rgba(255,255,255,0.05)' }}
-          >
-            <ToggleButton value="table" title="Dạng bảng"><ViewListIcon fontSize="small" /></ToggleButton>
-            <ToggleButton value="grid" title="Dạng lưới"><GridViewIcon fontSize="small" /></ToggleButton>
-          </ToggleButtonGroup>
+            <ViewModeToggle 
+              value={viewMode} 
+              onChange={setViewMode} 
+            />
 
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setAddDialog(true)}>Thêm HS</Button>
-        </Box>
-      </Box>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => setAddDialog(true)}>Thêm HS</Button>
+          </>
+        }
+      />
 
-      {/* Global Selection & Action Bar (Grid View Only) */}
       {viewMode === 'grid' && (
         <Box sx={{ 
           mb: 2, p: 1.5, 
@@ -287,11 +267,12 @@ const StudentsPanel = () => {
               color="error" 
               startIcon={<DeleteIcon />} 
               onClick={() => {
-                setConfirmDialog({
+                openConfirm({
                   title: 'Xóa hàng loạt',
                   message: `Bạn có chắc chắn muốn xóa hồ sơ của ${selected.length} học sinh ra khỏi hệ thống?\n(Dữ liệu điểm danh cũng sẽ bị ảnh hưởng)`,
                   showArchiveOption: true,
-                  onConfirm: (archive: boolean) => { bulkDeleteMut.mutate({ ids: selected, archive }); setConfirmDialog(null); }
+                  onConfirm: (archive: any) => bulkDeleteMut.mutate({ ids: selected, archive: !!archive }),
+                  isPending: bulkDeleteMut.isPending
                 });
               }}
             >
@@ -304,38 +285,24 @@ const StudentsPanel = () => {
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
 
       {students.length === 0 ? (
-        <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}>
-          <PersonIcon sx={{ fontSize: 64, color: 'primary.main', opacity: 0.5, mb: 2 }} />
-          <Typography color="text.secondary">Chưa có học sinh nào</Typography>
-        </Paper>
+        <EmptyState 
+          icon={<PersonIcon sx={{ fontSize: 64, opacity: 0.5 }} />}
+          title="Chưa có học sinh nào"
+          message="Hãy thêm học sinh đầu tiên hoặc nhập từ file Excel."
+        />
       ) : (() => {
         if (filteredStudents.length === 0) {
            return (
-             <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}>
-               <Typography color="text.secondary">Không tìm thấy kết quả phù hợp</Typography>
-             </Paper>
+             <EmptyState 
+                title="Không tìm thấy kết quả"
+                message={`Không có học sinh nào khớp với từ khóa "${searchTerm}"`}
+             />
            );
         }
 
         if (viewMode === 'table') {
           return (
-          <TableContainer component={Paper} sx={{ 
-            borderRadius: 3, 
-            maxHeight: 'calc(100vh - 160px)', 
-            overflowY: 'overlay',
-            pr: 0,
-            '&::-webkit-scrollbar': { width: '8px' },
-            '&::-webkit-scrollbar-track': { background: 'transparent' },
-            '&::-webkit-scrollbar-thumb': { 
-              background: 'linear-gradient(to bottom, #a855f7, #ec4899)', 
-              borderRadius: '10px',
-            },
-            '&::-webkit-scrollbar-thumb:hover': { 
-              background: 'linear-gradient(to bottom, #c084fc, #f472b6)', 
-            },
-            '&::-webkit-scrollbar-button:vertical:start:increment': { display: 'block', height: '16px' },
-            '&::-webkit-scrollbar-button:vertical:end:increment': { display: 'block', height: '16px' }
-          }}>
+          <PremiumScrollContainer>
             <Table stickyHeader>
               <TableHead>
                 <TableRow>
@@ -390,11 +357,12 @@ const StudentsPanel = () => {
                           <EditIcon />
                         </IconButton>
                          <IconButton size="small" title="Xoá" onClick={() => {
-                            setConfirmDialog({
+                            openConfirm({
                               title: 'Xóa học sinh',
                               message: `Bạn có chắc chắn muốn xóa hồ sơ của học sinh ${s.name}?`,
                               showArchiveOption: true,
-                              onConfirm: (archive: boolean) => { deleteStudentMut.mutate({ id: s.id, archive }); setConfirmDialog(null); }
+                              onConfirm: (archive: any) => deleteStudentMut.mutate({ id: s.id, archive: !!archive }),
+                              isPending: deleteStudentMut.isPending
                             });
                          }} sx={{ color: 'error.main' }}>
                            <DeleteIcon />
@@ -405,36 +373,12 @@ const StudentsPanel = () => {
                 })}
               </TableBody>
             </Table>
-          </TableContainer>
+          </PremiumScrollContainer>
           );
         }
 
-        // GRID VIEW
         return (
-          <Box sx={{ 
-            display: 'grid', 
-            gridTemplateColumns: {
-              xs: '1fr',
-              sm: 'repeat(auto-fill, minmax(300px, 1fr))',
-              md: 'repeat(auto-fill, minmax(320px, 1fr))',
-            },
-            gap: 3,
-            maxHeight: 'calc(100vh - 160px)',
-            overflowY: 'overlay',
-            p: 1,
-            pr: 1.5,
-            '&::-webkit-scrollbar': { width: '8px' },
-            '&::-webkit-scrollbar-track': { background: 'transparent' },
-            '&::-webkit-scrollbar-thumb': { 
-              background: 'linear-gradient(to bottom, #a855f7, #ec4899)', 
-              borderRadius: '10px',
-            },
-            '&::-webkit-scrollbar-thumb:hover': { 
-              background: 'linear-gradient(to bottom, #c084fc, #f472b6)', 
-            },
-            '&::-webkit-scrollbar-button:vertical:start:increment': { display: 'block', height: '16px' },
-            '&::-webkit-scrollbar-button:vertical:end:increment': { display: 'block', height: '16px' }
-          }}>
+          <PremiumScrollContainer component="box" sx={{ p: 1, pr: 1.5 }}>
             {filteredStudents.map((s: any) => (
               <Box key={s.id}>
                 <Card sx={{ 
@@ -456,7 +400,6 @@ const StudentsPanel = () => {
                       <MoreVertIcon />
                     </IconButton>
                   </Box>
-                  
                   <CardContent sx={{ pt: 1, flexGrow: 1, textAlign: 'center' }}>
                     <Avatar 
                       src={s.photo_url || undefined} 
@@ -468,7 +411,6 @@ const StudentsPanel = () => {
                     <Typography variant="body2" color="text.secondary" fontFamily="monospace" gutterBottom>
                       {s.student_code}
                     </Typography>
-                    
                     <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center' }}>
                       {s.email && (
                         <Tooltip title={s.email}>
@@ -485,49 +427,24 @@ const StudentsPanel = () => {
                         </Box>
                       )}
                     </Box>
-
                     <Box sx={{ mt: 2 }}>
                       {s.face_descriptor ? (
-                         <Chip 
-                           label="Đã đăng ký" 
-                           color="success" 
-                           size="small" 
-                           sx={{ 
-                             bgcolor: 'rgba(34,197,94,0.1)', 
-                             borderColor: 'rgba(34,197,94,0.2)',
-                             fontWeight: 'bold',
-                             border: '1px solid'
-                           }} 
-                         />
+                         <Chip label="Đã đăng ký" color="success" size="small" variant="outlined" />
                       ) : (
-                         <Chip 
-                           label="Thiếu khuôn mặt" 
-                           color="warning" 
-                           size="small" 
-                           variant="outlined" 
-                           sx={{ borderStyle: 'dashed' }}
-                         />
+                         <Chip label="Thiếu khuôn mặt" color="warning" size="small" variant="outlined" sx={{ borderStyle: 'dashed' }} />
                       )}
                     </Box>
                   </CardContent>
-
                   <CardActions sx={{ p: 2, pt: 0, justifyContent: 'center' }}>
                     {!s.face_descriptor ? (
                       <Button fullWidth variant="outlined" size="small" startIcon={<CameraAltIcon />} onClick={() => setFaceDialog(s)} color="warning">
                         Đăng ký ngay
                       </Button>
                     ) : (
-                      <Button fullWidth variant="text" size="small" disabled sx={{ opacity: 0.5 }}>
-                        Đã đăng ký
-                      </Button>
+                      <Button fullWidth variant="text" size="small" disabled sx={{ opacity: 0.5 }}>Đã đăng ký</Button>
                     )}
                   </CardActions>
-
-                  <Menu
-                    anchorEl={anchorEl[s.id]}
-                    open={Boolean(anchorEl[s.id])}
-                    onClose={() => handleMenuClose(s.id)}
-                  >
+                  <Menu anchorEl={anchorEl[s.id]} open={Boolean(anchorEl[s.id])} onClose={() => handleMenuClose(s.id)}>
                     <MenuItem onClick={() => {
                       handleMenuClose(s.id);
                       setEditStudent(s);
@@ -538,11 +455,12 @@ const StudentsPanel = () => {
                     </MenuItem>
                     <MenuItem onClick={() => {
                       handleMenuClose(s.id);
-                      setConfirmDialog({
+                      openConfirm({
                         title: 'Xóa học sinh',
                         message: `Bạn có chắc chắn muốn xóa hồ sơ của học sinh ${s.name}?`,
                         showArchiveOption: true,
-                        onConfirm: (archive: boolean) => { deleteStudentMut.mutate({ id: s.id, archive }); setConfirmDialog(null); }
+                        onConfirm: (archive: any) => deleteStudentMut.mutate({ id: s.id, archive: !!archive }),
+                        isPending: deleteStudentMut.isPending
                       });
                     }}>
                       <DeleteIcon fontSize="small" sx={{ mr: 1, color: 'error.main' }} /> Xóa hồ sơ
@@ -551,7 +469,7 @@ const StudentsPanel = () => {
                 </Card>
               </Box>
             ))}
-          </Box>
+          </PremiumScrollContainer>
         );
       })()}
 
@@ -595,18 +513,6 @@ const StudentsPanel = () => {
           onRegistered={handleFaceRegistered}
         />
       )}
-
-      {confirmDialog && (
-        <ConfirmDialog
-          open={true}
-           title={confirmDialog.title}
-           message={confirmDialog.message}
-           showArchiveOption={confirmDialog.showArchiveOption}
-           onConfirm={confirmDialog.onConfirm}
-           onCancel={() => setConfirmDialog(null)}
-           isPending={deleteStudentMut.isPending || bulkDeleteMut.isPending}
-         />
-       )}
     </Box>
   );
 };

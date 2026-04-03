@@ -2,10 +2,14 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box, Typography, Paper, Select, MenuItem, FormControl, InputLabel,
-  Table, TableHead, TableBody, TableRow, TableCell, TableContainer, Chip, Button,
+  Table, TableHead, TableBody, TableRow, TableCell, Chip, Button,
   TextField, Dialog, DialogTitle, DialogContent, IconButton, DialogActions,
   LinearProgress, Badge, Avatar
 } from '@mui/material';
+import { PremiumScrollContainer } from '../common/PremiumScrollContainer';
+import { SectionHeader } from '../common/SectionHeader';
+import { EmptyState } from '../common/EmptyState';
+import { useConfirm } from '@/hooks/useConfirm';
 import PeopleIcon from '@mui/icons-material/People';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
@@ -17,8 +21,6 @@ import { getCourses } from '@/common/api/course';
 import { getClasses } from '@/common/api/class';
 import { getSessions, deleteSession } from '@/common/api/session';
 import { markAttendanceManual, removeAttendance } from '@/common/api/attendance';
-import ConfirmDialog from '@/components/ConfirmDialog';
-import http from '@/common/utils/http';
 
 const parseSafeDate = (val: any) => {
   if (!val) return new Date(NaN);
@@ -33,8 +35,6 @@ const parseSafeDate = (val: any) => {
     }
     d = new Date(fixed);
     if (!isNaN(d.getTime())) return d;
-
-    // Try extracting only YYYY-MM-DD if full parsing failed
     const dateMatch = val.match(/^\d{4}-\d{2}-\d{2}/);
     if (dateMatch) {
       d = new Date(dateMatch[0]);
@@ -51,16 +51,9 @@ const StatsPanel = () => {
   const [toDate, setToDate] = useState('');
   const [detailsDialog, setDetailsDialog] = useState<any>(null);
   const [searchAttTerm, setSearchAttTerm] = useState('');
-  const [confirmState, setConfirmState] = useState<{
-    open: boolean;
-    title: string;
-    message: string;
-    onConfirm: (archive?: boolean) => void;
-    showArchiveOption?: boolean;
-    isPending?: boolean;
-  } | null>(null);
   
   const queryClient = useQueryClient();
+  const openConfirm = useConfirm();
 
   const { data: subjects = [] } = useQuery({ queryKey: ['courses'], queryFn: getCourses });
   const { data: classes = [] } = useQuery({ queryKey: ['classes', selectedSubject], queryFn: () => getClasses(selectedSubject), enabled: !!selectedSubject });
@@ -73,14 +66,10 @@ const StatsPanel = () => {
     rawSessions.forEach((s: any) => {
       const dateVal = s.created_at || s.createdAt;
       let d = parseSafeDate(dateVal);
-      
       if (isNaN(d.getTime())) {
          const numericId = Number(s.session_id) || Number(s.id);
-         if (!isNaN(numericId) && numericId > 10000000000) {
-            d = new Date(numericId);
-         }
+         if (!isNaN(numericId) && numericId > 10000000000) d = new Date(numericId);
       }
-      
       const sessionTime = d.getTime();
       const finalDateVal = isNaN(sessionTime) ? 'N/A' : dateVal;
       const dateKey = isNaN(sessionTime) ? 'unknown' : d.toISOString().split('T')[0];
@@ -94,24 +83,18 @@ const StatsPanel = () => {
           attendances: [],
         };
       }
-      
       (s.attendances || []).forEach((att: any) => {
         const studentId = att.student?.id;
         if (!studentId) return;
-        
         const existingAttIdx = groups[dateKey].attendances.findIndex((a: any) => a.student?.id === studentId);
-        if (existingAttIdx === -1) {
-          groups[dateKey].attendances.push({ ...att, sessionId: s.id });
-        } else {
+        if (existingAttIdx === -1) groups[dateKey].attendances.push({ ...att, sessionId: s.id });
+        else {
           const existingAtt = groups[dateKey].attendances[existingAttIdx];
           const statusOrder: Record<string, number> = { present: 3, late: 2, absent: 1 };
-          if (statusOrder[att.status] > statusOrder[existingAtt.status]) {
-            groups[dateKey].attendances[existingAttIdx] = { ...att, sessionId: s.id };
-          }
+          if (statusOrder[att.status] > statusOrder[existingAtt.status]) groups[dateKey].attendances[existingAttIdx] = { ...att, sessionId: s.id };
         }
       });
     });
-
     return Object.values(groups).sort((a: any, b: any) => {
       const dateA = parseSafeDate(a.created_at).getTime();
       const dateB = parseSafeDate(b.created_at).getTime();
@@ -125,7 +108,6 @@ const StatsPanel = () => {
     return sessionsByDate.filter((s: any) => {
       const sessionDate = parseSafeDate(s.created_at);
       const sessionTime = isNaN(sessionDate.getTime()) ? (Number(s.session_id) || 0) : sessionDate.getTime();
-      
       if (fromDate) {
         const fDate = parseSafeDate(fromDate);
         if (!isNaN(fDate.getTime()) && sessionTime < fDate.getTime()) return false;
@@ -156,9 +138,7 @@ const StatsPanel = () => {
 
   const markManualMut = useMutation({
     mutationFn: markAttendanceManual,
-    onSuccess: () => {
-       queryClient.invalidateQueries({ queryKey: ['sessions', selectedClass] });
-    }
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sessions', selectedClass] })
   });
 
   const deleteSessionMut = useMutation({
@@ -166,16 +146,12 @@ const StatsPanel = () => {
     onSuccess: () => {
        queryClient.invalidateQueries({ queryKey: ['sessions', selectedClass] });
        setDetailsDialog(null);
-       setConfirmState(null);
     }
   });
 
   const removeAttendanceMut = useMutation({
     mutationFn: (payload: { session_id: string, student_id: string, archive?: boolean }) => removeAttendance(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sessions', selectedClass] });
-      setConfirmState(null);
-    }
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sessions', selectedClass] })
   });
 
   const exportToExcel = () => {
@@ -228,7 +204,16 @@ const StatsPanel = () => {
 
   return (
     <Box>
-      <Typography variant="h4" fontFamily='"Cinzel", serif' sx={{ mb: 3 }}>Thống Kê Điểm Danh</Typography>
+      <SectionHeader 
+        title="Thống Kê Điểm Danh" 
+        actions={
+          filteredSessions.length > 0 ? (
+            <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportToExcel}>
+              Xuất Excel
+            </Button>
+          ) : undefined
+        }
+      />
 
       <Paper sx={{ p: 3, borderRadius: 3, mb: 3 }}>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -246,7 +231,6 @@ const StatsPanel = () => {
           </FormControl>
           <TextField label="Từ ngày" type="date" InputLabelProps={{ shrink: true }} value={fromDate} onChange={(e) => setFromDate(e.target.value)} disabled={!selectedClass} size="small" sx={{ '& input::-webkit-calendar-picker-indicator': { filter: 'invert(1)', cursor: 'pointer' } }} />
           <TextField label="Đến ngày" type="date" InputLabelProps={{ shrink: true }} value={toDate} onChange={(e) => setToDate(e.target.value)} disabled={!selectedClass} size="small" sx={{ '& input::-webkit-calendar-picker-indicator': { filter: 'invert(1)', cursor: 'pointer' } }} />
-          {filteredSessions.length > 0 && <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportToExcel} sx={{ ml: 'auto' }}>Xuất Excel</Button>}
         </Box>
       </Paper>
 
@@ -265,24 +249,8 @@ const StatsPanel = () => {
         ))}
       </Box>
 
-      {filteredSessions.length > 0 && (
-        <TableContainer component={Paper} sx={{ 
-          borderRadius: 3,
-          maxHeight: 'calc(100vh - 400px)',
-          overflowY: 'overlay',
-          pr: 0,
-          '&::-webkit-scrollbar': { width: '8px' },
-          '&::-webkit-scrollbar-track': { background: 'transparent' },
-          '&::-webkit-scrollbar-thumb': { 
-            background: 'linear-gradient(to bottom, #a855f7, #ec4899)', 
-            borderRadius: '10px',
-          },
-          '&::-webkit-scrollbar-thumb:hover': { 
-            background: 'linear-gradient(to bottom, #c084fc, #f472b6)', 
-          },
-          '&::-webkit-scrollbar-button:vertical:start:increment': { display: 'block', height: '16px' },
-          '&::-webkit-scrollbar-button:vertical:end:increment': { display: 'block', height: '16px' }
-        }}>
+      {filteredSessions.length > 0 ? (
+        <PremiumScrollContainer maxHeight="calc(100vh - 400px)">
           <Table>
             <TableHead>
               <TableRow>
@@ -319,12 +287,11 @@ const StatsPanel = () => {
                     <TableCell align="center">
                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>
                           <Button size="small" variant="outlined" onClick={() => setDetailsDialog(s)}>Xem</Button>
-                          <IconButton size="small" color="error" onClick={() => setConfirmState({
-                            open: true,
+                          <IconButton size="small" color="error" onClick={() => openConfirm({
                             title: 'Xóa buổi học',
                             message: `Bạn có chắc chắn muốn xóa toàn bộ dữ liệu của buổi học ngày ${s.displayDate}?\n(Dữ liệu điểm danh của tất cả học sinh trong buổi này sẽ bị mất)`,
                             showArchiveOption: true,
-                            onConfirm: (archive) => deleteSessionMut.mutate({ id: s.id, archive: !!archive }),
+                            onConfirm: (archive: any) => deleteSessionMut.mutate({ id: s.id, archive: !!archive }),
                             isPending: deleteSessionMut.isPending
                           })}><DeleteIcon fontSize="small" /></IconButton>
                        </Box>
@@ -334,11 +301,15 @@ const StatsPanel = () => {
               })}
             </TableBody>
           </Table>
-        </TableContainer>
-      )}
-
-      {selectedClass && filteredSessions.length === 0 && (
-        <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}><Typography color="text.secondary">Chưa có buổi điểm danh nào phù hợp</Typography></Paper>
+        </PremiumScrollContainer>
+      ) : selectedClass ? (
+        <EmptyState 
+          message="Chưa có buổi điểm danh nào phù hợp với bộ lọc."
+        />
+      ) : (
+        <EmptyState 
+          message="Vui lòng chọn môn học và lớp để xem thống kê."
+        />
       )}
 
       <Dialog open={!!detailsDialog} onClose={() => { setDetailsDialog(null); setSearchAttTerm(''); }} maxWidth="md" fullWidth>
@@ -372,24 +343,7 @@ const StatsPanel = () => {
                   </Box>
                 </Paper>
                 <TextField size="small" placeholder="Tìm MSSV hoặc tên học sinh..." autoFocus value={searchAttTerm} onChange={(e) => setSearchAttTerm(e.target.value)} fullWidth />
-                <TableContainer component={Paper} variant="outlined" sx={{ 
-                  borderRadius: 3, 
-                  border: '1px solid rgba(255,255,255,0.1)', 
-                  maxHeight: '55vh', 
-                  overflowY: 'overlay',
-                  pr: 0,
-                  '&::-webkit-scrollbar': { width: '8px' },
-                  '&::-webkit-scrollbar-track': { background: 'transparent' },
-                  '&::-webkit-scrollbar-thumb': { 
-                    background: 'linear-gradient(to bottom, #a855f7, #ec4899)', 
-                    borderRadius: '10px',
-                  },
-                  '&::-webkit-scrollbar-thumb:hover': { 
-                    background: 'linear-gradient(to bottom, #c084fc, #f472b6)', 
-                  },
-                  '&::-webkit-scrollbar-button:vertical:start:increment': { display: 'block', height: '16px' },
-                  '&::-webkit-scrollbar-button:vertical:end:increment': { display: 'block', height: '16px' }
-                }}>
+                <PremiumScrollContainer maxHeight="55vh" variant="outlined">
                   <Table size="small" stickyHeader>
                     <TableHead><TableRow><TableCell>Họ tên</TableCell><TableCell>MSSV</TableCell><TableCell align="center">Trạng thái</TableCell><TableCell align="center">Thao tác</TableCell></TableRow></TableHead>
                     <TableBody>
@@ -417,14 +371,12 @@ const StatsPanel = () => {
                                 const newStatus = e.target.value;
                                 if (newStatus === 'absent') {
                                    const oldLabel = r.status === 'present' ? 'Có mặt' : 'Vào muộn';
-                                   setConfirmState({
-                                     open: true,
+                                   openConfirm({
                                      title: 'Xác nhận Vắng mặt',
                                      message: `Bạn đang thực hiện chuyển trạng thái của sinh viên ${r.student?.name} từ [${oldLabel}] sang [Vắng mặt]. \n\nHành động này sẽ XÓA BỎ hoàn toàn ghi nhận thời gian điểm danh và ảnh minh chứng của sinh viên trong buổi học này. Bạn có chắc chắn muốn tiếp tục không?`,
                                      showArchiveOption: !!r.captured_frame_url,
-                                     onConfirm: (archive) => {
+                                     onConfirm: (archive: any) => {
                                        removeAttendanceMut.mutate({ session_id: r.sessionId, student_id: r.student.id, archive: !!archive });
-                                       // Cập nhật UI ngay lập tức
                                        setDetailsDialog({ 
                                           ...detailsDialog, 
                                           attendances: detailsDialog.attendances.map((x: any) => x.id === r.id ? { ...x, status: 'absent', recognized_at: null, captured_frame_url: null } : x) 
@@ -454,12 +406,11 @@ const StatsPanel = () => {
                           </TableCell>
                           <TableCell align="center">
                             {!!r.captured_frame_url && r.status !== 'absent' && (
-                              <IconButton color="error" size="small" onClick={() => setConfirmState({
-                                open: true,
+                              <IconButton color="error" size="small" onClick={() => openConfirm({
                                 title: 'Xóa dữ liệu ảnh',
                                 message: `Bạn có chắc chắn muốn xóa ảnh minh chứng điểm danh của học sinh ${r.student?.name}?`,
                                 showArchiveOption: true,
-                                onConfirm: (archive) => {
+                                onConfirm: (archive: any) => {
                                    removeAttendanceMut.mutate({ session_id: r.sessionId, student_id: r.student.id, archive: !!archive });
                                    setDetailsDialog({ 
                                       ...detailsDialog, 
@@ -474,25 +425,13 @@ const StatsPanel = () => {
                       ))}
                     </TableBody>
                   </Table>
-                </TableContainer>
+                </PremiumScrollContainer>
                </>
              );
           })()}
         </DialogContent>
         <DialogActions><Button onClick={() => setDetailsDialog(null)}>Đóng</Button></DialogActions>
       </Dialog>
-      
-      {confirmState && (
-        <ConfirmDialog
-          open={confirmState.open}
-          title={confirmState.title}
-          message={confirmState.message}
-          showArchiveOption={confirmState.showArchiveOption}
-          onConfirm={confirmState.onConfirm}
-          onCancel={() => setConfirmState(null)}
-          isPending={confirmState.isPending}
-        />
-      )}
     </Box>
   );
 };

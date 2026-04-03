@@ -9,6 +9,10 @@ import {
   List, ListItem, ListItemText, ListItemSecondaryAction, Select, MenuItem,
   FormControl, InputLabel, Alert, Checkbox, ListItemIcon, Avatar,
 } from '@mui/material';
+import { PremiumScrollContainer } from '../common/PremiumScrollContainer';
+import { SectionHeader } from '../common/SectionHeader';
+import { EmptyState } from '../common/EmptyState';
+import { useConfirm } from '@/hooks/useConfirm';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -21,7 +25,6 @@ import { getCourses, createCourse, deleteCourse } from '@/common/api/course';
 import { getClasses, createClass, deleteClass, getAssignedStudents, assignStudent, unassignStudent, assignBulkStudents } from '@/common/api/class';
 import { getStudents } from '@/common/api/student';
 import { useAuth } from '@/contexts/AuthContext';
-import ConfirmDialog from '@/components/ConfirmDialog';
 
 const subjectSchema = z.object({ name: z.string().min(1, 'Tên môn học không được trống') });
 const classSchema = z.object({
@@ -32,21 +35,19 @@ const classSchema = z.object({
 const SubjectsPanel = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const openConfirm = useConfirm();
   const [subjectDialog, setSubjectDialog] = useState(false);
   const [classDialog, setClassDialog] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [assignDialog, setAssignDialog] = useState<{ classId: string; className: string } | null>(null);
-  const [confirmDialog, setConfirmDialog] = useState<any>(null);
   const [assignSearch, setAssignSearch] = useState('');
 
   const subjectForm = useForm({ resolver: zodResolver(subjectSchema), defaultValues: { name: '' } });
   const classForm = useForm({ resolver: zodResolver(classSchema), defaultValues: { name: '', type: 'theory' as const } });
 
-  // Keyboard Shortcuts for Dialogs
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (document.activeElement?.tagName === 'INPUT') return; // Let the form native submit handle input enters
-      
+      if (document.activeElement?.tagName === 'INPUT') return;
       if (e.key === 'Enter') {
         if (subjectDialog) {
           e.preventDefault();
@@ -61,7 +62,6 @@ const SubjectsPanel = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [subjectDialog, classDialog, subjectForm, classForm]);
 
-  // --- Queries ---
   const { data: courses = [] } = useQuery({ queryKey: ['courses'], queryFn: getCourses });
   const { data: allClasses = [] } = useQuery({ queryKey: ['classes'], queryFn: () => getClasses() });
   const { data: allStudents = [] } = useQuery({ queryKey: ['students'], queryFn: getStudents, enabled: !!assignDialog });
@@ -73,7 +73,6 @@ const SubjectsPanel = () => {
 
   const assignedStudentIds = new Set(assignedStudents.map((s: any) => s.id));
 
-  // --- Mutations ---
   const createCourseMut = useMutation({
     mutationFn: createCourse,
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['courses'] }); setSubjectDialog(false); subjectForm.reset(); },
@@ -103,15 +102,6 @@ const SubjectsPanel = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['classes'] }),
   });
 
-  const generateAssignMutation = (isAssigning: boolean) => useMutation({
-    mutationFn: ({ classId, studentId }: { classId: string, studentId: string }) => 
-      isAssigning ? assignStudent(classId, studentId) : unassignStudent(classId, studentId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['class_students', assignDialog?.classId] });
-      queryClient.invalidateQueries({ queryKey: ['classes'] });
-    }
-  });
-
   const bulkAssignMut = useMutation({
     mutationFn: ({ classId, students, sync }: { classId: string, students: any[], sync?: boolean }) => assignBulkStudents(classId, students, sync),
     onSuccess: () => {
@@ -122,7 +112,6 @@ const SubjectsPanel = () => {
     onError: (e: any) => setError(e.message)
   });
 
-  // --- Handlers ---
   const toggleStudent = (studentId: string) => {
     if (!assignDialog) return;
     if (assignedStudentIds.has(studentId)) {
@@ -140,45 +129,33 @@ const SubjectsPanel = () => {
 
   const handleSelectAll = (checked: boolean) => {
     if (!assignDialog) return;
-    
-    // We only affect students currently visible in the search
     const filteredInDialog = (allStudents as any[]).filter(s => 
       s.name.toLowerCase().includes(assignSearch.toLowerCase()) || 
       s.student_code.toLowerCase().includes(assignSearch.toLowerCase())
     );
-
     if (checked) {
-      // SYNC MODE: we want the assigned set to BE (current_assigned + filteredInDialog)
       const currentAssigned = (assignedStudents as any[]);
       const currentIds = new Set(currentAssigned.map(s => s.id));
-      
       const studentsToSync = [...currentAssigned];
       filteredInDialog.forEach(s => {
-        if (!currentIds.has(s.id)) {
-          studentsToSync.push(s);
-        }
+        if (!currentIds.has(s.id)) studentsToSync.push(s);
       });
-
       const payload = studentsToSync.map(s => ({
         student_code: s.student_code,
         name: s.name,
         email: s.email || '',
         phone: s.phone || '',
       }));
-
       bulkAssignMut.mutate({ classId: assignDialog.classId, students: payload, sync: true });
     } else {
-      // SYNC MODE: we want the assigned set to BE (current_assigned - filteredInDialog)
       const filteredIds = new Set(filteredInDialog.map(s => s.id));
       const studentsToSync = (assignedStudents as any[]).filter(s => !filteredIds.has(s.id));
-
       const payload = studentsToSync.map(s => ({
         student_code: s.student_code,
         name: s.name,
         email: s.email || '',
         phone: s.phone || '',
       }));
-
       bulkAssignMut.mutate({ classId: assignDialog.classId, students: payload, sync: true });
     }
   };
@@ -192,48 +169,32 @@ const SubjectsPanel = () => {
       const wb = XLSX.read(bstr, { type: 'binary' });
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
-      
-      // Đọc dạng mảng để xử lý thông minh (Header vs No-Header)
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
       if (rows.length === 0) return;
-
       let startIndex = 0;
       let colMap = { code: 0, name: 1, email: 2, phone: 3 };
-
       const firstRow = rows[0].map(c => String(c || '').toLowerCase().trim());
-      const hasHeader = firstRow.some(c => 
-        ['mssv', 'mã sv', 'mã số', 'họ tên', 'tên', 'email', 'sđt', 'phone'].includes(c)
-      );
-
+      const hasHeader = firstRow.some(c => ['mssv', 'mã sv', 'mã số', 'họ tên', 'tên', 'email', 'sđt', 'phone'].includes(c));
       if (hasHeader) {
         startIndex = 1;
         colMap.code = firstRow.findIndex(c => ['mssv', 'mã sv', 'mã số', 'mã số sinh viên', 'student_code'].includes(c));
         colMap.name = firstRow.findIndex(c => ['họ tên', 'tên', 'name', 'full name', 'full_name', 'họ và tên'].includes(c));
         colMap.email = firstRow.findIndex(c => ['email', 'thư điện tử', 'mail'].includes(c));
         colMap.phone = firstRow.findIndex(c => ['sđt', 'số điện thoại', 'phone', 'tel'].includes(c));
-        
-        // Fallbacks
         if (colMap.code === -1) colMap.code = 0;
         if (colMap.name === -1) colMap.name = 1;
         if (colMap.email === -1) colMap.email = 2;
         if (colMap.phone === -1) colMap.phone = 3;
       }
-
-      const formatted = rows.slice(startIndex).map((row: any[]) => {
-        return {
-          student_code: String(row[colMap.code] || '').trim(),
-          name: String(row[colMap.name] || '').trim(),
-          email: colMap.email !== -1 ? String(row[colMap.email] || '').trim() : '',
-          phone: colMap.phone !== -1 ? String(row[colMap.phone] || '').trim() : '',
-          teacher_id: user?.id,
-        };
-      }).filter(s => s.student_code); 
-      
-      if (formatted.length > 0) {
-        bulkAssignMut.mutate({ classId: assignDialog.classId, students: formatted });
-      } else {
-        setError('Không tìm thấy dữ liệu MSSV hợp lệ trong file');
-      }
+      const formatted = rows.slice(startIndex).map((row: any[]) => ({
+        student_code: String(row[colMap.code] || '').trim(),
+        name: String(row[colMap.name] || '').trim(),
+        email: colMap.email !== -1 ? String(row[colMap.email] || '').trim() : '',
+        phone: colMap.phone !== -1 ? String(row[colMap.phone] || '').trim() : '',
+        teacher_id: user?.id,
+      })).filter(s => s.student_code); 
+      if (formatted.length > 0) bulkAssignMut.mutate({ classId: assignDialog.classId, students: formatted });
+      else setError('Không tìm thấy dữ liệu MSSV hợp lệ trong file');
     };
     reader.readAsBinaryString(file);
     e.target.value = '';
@@ -241,18 +202,21 @@ const SubjectsPanel = () => {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" fontFamily='"Cinzel", serif'>Môn Học & Lớp</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setSubjectDialog(true)}>Thêm Môn</Button>
-      </Box>
+      <SectionHeader 
+        title="Môn Học & Lớp" 
+        actions={
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setSubjectDialog(true)}>Thêm Môn</Button>
+        }
+      />
 
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
 
       {courses.length === 0 ? (
-        <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}>
-          <SchoolIcon sx={{ fontSize: 64, color: 'primary.main', opacity: 0.5, mb: 2 }} />
-          <Typography color="text.secondary">Chưa có môn học nào. Thêm môn học để bắt đầu!</Typography>
-        </Paper>
+        <EmptyState 
+          icon={<SchoolIcon sx={{ fontSize: 64, opacity: 0.5 }} />}
+          title="Chưa có môn học nào"
+          message="Thêm môn học để bắt đầu tổ chức lớp học và điểm danh!"
+        />
       ) : (
         courses.map((course: any) => {
           const courseClasses = allClasses.filter((c: any) => c.course?.id === course.id);
@@ -276,10 +240,11 @@ const SubjectsPanel = () => {
                 <Box sx={{ display: 'flex', gap: 1 }}>
                   <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={(e) => { 
                     e.stopPropagation(); 
-                    setConfirmDialog({
+                    openConfirm({
                       title: 'Xóa môn học',
                       message: `CẢNH BÁO: Xóa môn "${course.name}" sẽ xóa TOÀN BỘ các Lớp, Danh sách học sinh trong lớp và Lịch sử điểm danh của môn này. Vẫn tiếp tục?`,
-                      onConfirm: () => { deleteCourseMut.mutate(course.id); setConfirmDialog(null); }
+                      onConfirm: () => deleteCourseMut.mutate(course.id),
+                      isPending: deleteCourseMut.isPending
                     });
                   }}>Xoá Môn</Button>
                   <Button size="small" startIcon={<AddIcon />} onClick={() => { setClassDialog(course.id); classForm.reset(); }}>Thêm Lớp</Button>
@@ -293,10 +258,11 @@ const SubjectsPanel = () => {
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, pl: 1 }}>
                         <Typography variant="subtitle2" sx={{ color: 'primary.light' }}>🗃️ {className}</Typography>
                         <IconButton size="small" onClick={() => {
-                          setConfirmDialog({
+                          openConfirm({
                             title: 'Xóa toàn bộ nhóm lớp',
                             message: `Bạn có chắc chắn muốn xóa toàn bộ nhóm lớp '${className}'?\nHành động này sẽ xóa cả Lý thuyết và Thực hành cùng mọi dữ liệu liên quan.`,
-                            onConfirm: () => { bulkDeleteClassMut.mutate(items.map((i: any) => i.id)); setConfirmDialog(null); }
+                            onConfirm: () => bulkDeleteClassMut.mutate(items.map((i: any) => i.id)),
+                            isPending: bulkDeleteClassMut.isPending
                           });
                         }} sx={{ color: 'error.main' }} disabled={bulkDeleteClassMut.isPending}>
                           <DeleteIcon fontSize="small" />
@@ -323,10 +289,11 @@ const SubjectsPanel = () => {
                               <GroupIcon fontSize="small" />
                             </IconButton>
                             <IconButton size="small" onClick={() => {
-                               setConfirmDialog({
+                               openConfirm({
                                  title: 'Xóa lớp học',
                                  message: `Xóa lớp "${cls.name} (${cls.type === 'theory' ? 'Lý thuyết' : 'Thực hành'})"?\nTOÀN BỘ dữ liệu điểm danh của lớp này sẽ bị xóa bỏ!`,
-                                 onConfirm: () => { deleteClassMut.mutate(cls.id); setConfirmDialog(null); }
+                                 onConfirm: () => deleteClassMut.mutate(cls.id),
+                                 isPending: deleteClassMut.isPending
                                });
                             }} sx={{ color: 'error.main' }}>
                               <DeleteIcon fontSize="small" />
@@ -338,7 +305,10 @@ const SubjectsPanel = () => {
                   );
                 })}
                 {courseClasses.length === 0 && (
-                  <Typography variant="body2" color="text.secondary" sx={{ py: 1, fontStyle: 'italic' }}>Chưa có lớp nào</Typography>
+                  <EmptyState 
+                    message="Chưa có lớp nào trong môn học này."
+                    sx={{ py: 2, border: 'none', bgcolor: 'transparent' }}
+                  />
                 )}
               </List>
             </AccordionDetails>
@@ -428,24 +398,13 @@ const SubjectsPanel = () => {
              <Typography variant="caption" color="text.secondary">Tên cột mong đợi: mã sv/mssv, họ tên/tên, email, sđt</Typography>
           </Box>
           {(allStudents as any[]).length === 0 ? (
-            <Typography color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>Chưa có học sinh nào. Hãy thêm học sinh trước.</Typography>
+            <EmptyState 
+              message="Chưa có học sinh nào. Hãy thêm học sinh trước."
+              sx={{ border: 'none', bgcolor: 'transparent' }}
+            />
           ) : (
-            <List sx={{ 
-              maxHeight: 'calc(100vh - 250px)', 
-              overflowY: 'overlay',
-              pr: 0,
-              '&::-webkit-scrollbar': { width: '8px' },
-              '&::-webkit-scrollbar-track': { background: 'transparent' },
-              '&::-webkit-scrollbar-thumb': { 
-                background: 'linear-gradient(to bottom, #a855f7, #ec4899)', 
-                borderRadius: '10px',
-              },
-              '&::-webkit-scrollbar-thumb:hover': { 
-                background: 'linear-gradient(to bottom, #c084fc, #f472b6)', 
-              },
-              '&::-webkit-scrollbar-button:vertical:start:increment': { display: 'block', height: '16px' },
-              '&::-webkit-scrollbar-button:vertical:end:increment': { display: 'block', height: '16px' }
-            }}>
+            <PremiumScrollContainer maxHeight="calc(100vh - 250px)" component="box">
+              <List sx={{ p: 0 }}>
               {(allStudents as any[])
                 .filter(s => s.name.toLowerCase().includes(assignSearch.toLowerCase()) || s.student_code.toLowerCase().includes(assignSearch.toLowerCase()))
                 .map((student: any) => (
@@ -460,25 +419,14 @@ const SubjectsPanel = () => {
                   <ListItemText primary={student.name} secondary={student.student_code} />
                 </ListItem>
               ))}
-            </List>
+              </List>
+            </PremiumScrollContainer>
           )}
         </DialogContent>
         <DialogActions><Button onClick={() => setAssignDialog(null)}>Đóng</Button></DialogActions>
       </Dialog>
-
-      {confirmDialog && (
-        <ConfirmDialog
-          open={true}
-          title={confirmDialog.title}
-          message={confirmDialog.message}
-          onConfirm={confirmDialog.onConfirm}
-          onCancel={() => setConfirmDialog(null)}
-          isPending={deleteCourseMut.isPending || deleteClassMut.isPending || bulkDeleteClassMut.isPending}
-        />
-      )}
     </Box>
   );
 };
-
 
 export default SubjectsPanel;

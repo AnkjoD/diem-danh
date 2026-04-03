@@ -20,6 +20,12 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions, Grid, IconButton,
   Card, CardContent, Menu, MenuItem, Divider
 } from '@mui/material';
+import { ViewModeToggle } from '../common/ViewModeToggle';
+import { PremiumScrollContainer } from '../common/PremiumScrollContainer';
+import { SectionHeader } from '../common/SectionHeader';
+import { ImportButton } from '../common/ImportButton';
+import { EmptyState } from '../common/EmptyState';
+import { useConfirm } from '@/hooks/useConfirm';
 import { getCourses } from '@/common/api/course';
 import { getClasses, getAssignedStudents } from '@/common/api/class';
 import { createSession, getTodaySession, updateSession } from '@/common/api/session';
@@ -31,6 +37,7 @@ const FaceAttendancePanel = () => {
   const [selectedSubject, setSelectedSubject] = useState('');
   const [selectedClass, setSelectedClass] = useState('');
   const queryClient = useQueryClient();
+  const openConfirm = useConfirm();
   const [recognized, setRecognized] = useState<Map<string, string>>(new Map());
   const [scanning, setScanning] = useState(false);
   const [searchAttTerm, setSearchAttTerm] = useState('');
@@ -391,15 +398,27 @@ const FaceAttendancePanel = () => {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' }, mb: 3, gap: 2 }}>
-        <Typography variant="h4" fontFamily='"Cinzel", serif'>Điểm Danh Khuôn Mặt</Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, color: 'text.secondary', bgcolor: 'rgba(255,255,255,0.05)', px: 2, py: 1, borderRadius: 2, border: '1px solid rgba(255,255,255,0.1)' }}>
-          <TodayIcon color="primary" />
-          <Typography variant="subtitle1" fontWeight={500} sx={{ textTransform: 'capitalize' }}>
-            {new Date().toLocaleDateString('vi-VN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-          </Typography>
-        </Box>
-      </Box>
+      <SectionHeader 
+        title="Điểm Danh Khuôn Mặt" 
+        actions={
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 1.5, 
+            color: 'text.secondary', 
+            bgcolor: 'rgba(255,255,255,0.05)', 
+            px: 2, 
+            py: 1, 
+            borderRadius: 2, 
+            border: '1px solid rgba(255,255,255,0.1)' 
+          }}>
+            <TodayIcon color="primary" />
+            <Typography variant="subtitle1" fontWeight={500} sx={{ textTransform: 'capitalize' }}>
+              {new Date().toLocaleDateString('vi-VN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            </Typography>
+          </Box>
+        }
+      />
 
       {selectedClass && classStudents.length > 0 && unregisteredCount > 0 && (
         <Alert severity="warning" sx={{ mb: 2, borderRadius: 2, border: '1px solid rgba(245,158,11,0.2)' }}>
@@ -445,21 +464,13 @@ const FaceAttendancePanel = () => {
             </Button>
           )}
 
-          <Button 
-            variant="outlined" 
-            component="label" 
-            startIcon={<CloudUploadIcon />}
+          <ImportButton 
+            onFileSelect={handleFileUpload}
             disabled={!selectedClass || classStudents.length === 0 || recognizeMut.isPending || isTimeInvalid}
-          >
-            Tải ảnh lên
-            <input 
-              type="file" 
-              hidden 
-              multiple
-              accept="image/*" 
-              onChange={handleFileUpload} 
-            />
-          </Button>
+            label="Tải ảnh lên"
+            tooltip="Chọn một hoặc nhiều ảnh tập thể lớp"
+            accept="image/*"
+          />
         </Box>
 
         {filesToUpload.length > 0 && (
@@ -627,16 +638,17 @@ const FaceAttendancePanel = () => {
               </Box>
             </Box>
           ) : (
-            <Box sx={{ p: 4, textAlign: 'center', minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-              <CameraAltIcon sx={{ fontSize: 64, color: 'primary.main', opacity: 0.3, mb: 1 }} />
-              <Typography color="text.secondary">Chọn môn và lớp rồi bắt đầu điểm danh</Typography>
-            </Box>
+            <EmptyState 
+              icon={<CameraAltIcon sx={{ fontSize: 64, opacity: 0.3 }} />}
+              message="Chọn môn và lớp rồi bắt đầu điểm danh"
+              sx={{ minHeight: 300, border: 'none', bgcolor: 'transparent' }}
+            />
           )}
           <canvas ref={canvasRef} style={{ display: 'none' }} />
         </Paper>
 
         <Box sx={{ flex: 1 }}>
-          <Box sx={{ mb: 2 }}>
+          <Box sx={{ mb: 2, display: 'flex', gap: 2, alignItems: 'center' }}>
             <TextField 
               size="small" 
               placeholder="Tìm MSSV hoặc tên học sinh..." 
@@ -645,6 +657,10 @@ const FaceAttendancePanel = () => {
               value={searchAttTerm}
               onChange={(e: any) => setSearchAttTerm(e.target.value)}
               disabled={classStudents.length === 0}
+            />
+            <ViewModeToggle 
+              value={viewMode} 
+              onChange={setViewMode} 
             />
           </Box>
           {selectedClass && classStudents.length > 0 && (
@@ -703,23 +719,7 @@ const FaceAttendancePanel = () => {
                s.student_code.toLowerCase().includes(searchAttTerm.toLowerCase())
             );
             return viewMode === 'table' ? (
-              <TableContainer component={Paper} sx={{ 
-                borderRadius: 3, 
-                maxHeight: 'calc(100vh - 220px)', 
-                overflowY: 'overlay',
-                pr: 0,
-                '&::-webkit-scrollbar': { width: '8px' },
-                '&::-webkit-scrollbar-track': { background: 'transparent' },
-                '&::-webkit-scrollbar-thumb': { 
-                  background: 'linear-gradient(to bottom, #a855f7, #ec4899)', 
-                  borderRadius: '10px',
-                },
-                '&::-webkit-scrollbar-thumb:hover': { 
-                  background: 'linear-gradient(to bottom, #c084fc, #f472b6)', 
-                },
-                '&::-webkit-scrollbar-button:vertical:start:increment': { display: 'block', height: '16px' },
-                '&::-webkit-scrollbar-button:vertical:end:increment': { display: 'block', height: '16px' }
-              }}>
+              <PremiumScrollContainer maxHeight="calc(100vh - 220px)">
                 <Table size="small" stickyHeader>
                   <TableHead>
                     <TableRow>
@@ -779,33 +779,10 @@ const FaceAttendancePanel = () => {
                     ))}
                   </TableBody>
                 </Table>
-              </TableContainer>
+              </PremiumScrollContainer>
             ) : (
               // GRID VIEW
-              <Box sx={{ 
-                display: 'grid', 
-                gridTemplateColumns: {
-                  xs: '1fr',
-                  sm: 'repeat(auto-fill, minmax(280px, 1fr))',
-                  lg: 'repeat(auto-fill, minmax(320px, 1fr))',
-                },
-                gap: 2,
-                maxHeight: 'calc(100vh - 220px)', 
-                overflowY: 'overlay', 
-                p: 0.5,
-                pr: 1.5,
-                '&::-webkit-scrollbar': { width: '8px' },
-                '&::-webkit-scrollbar-track': { background: 'transparent' },
-                '&::-webkit-scrollbar-thumb': { 
-                  background: 'linear-gradient(to bottom, #a855f7, #ec4899)', 
-                  borderRadius: '10px',
-                },
-                '&::-webkit-scrollbar-thumb:hover': { 
-                  background: 'linear-gradient(to bottom, #c084fc, #f472b6)', 
-                },
-                '&::-webkit-scrollbar-button:vertical:start:increment': { display: 'block', height: '16px' },
-                '&::-webkit-scrollbar-button:vertical:end:increment': { display: 'block', height: '16px' }
-              }}>
+              <PremiumScrollContainer component="box" maxHeight="calc(100vh - 220px)" sx={{ p: 0.5, pr: 1.5 }}>
                 {filteredClassStudents.map((s: StudentData) => {
                   const status = recognized.get(s.id);
                   const isPresent = status === 'present';
@@ -863,12 +840,13 @@ const FaceAttendancePanel = () => {
                     </Box>
                   );
                 })}
-              </Box>
+              </PremiumScrollContainer>
             );
           })() : selectedClass ? (
-            <Paper sx={{ p: 3, textAlign: 'center', borderRadius: 3 }}>
-              <Typography color="text.secondary">Lớp này chưa có học sinh.</Typography>
-            </Paper>
+            <EmptyState 
+              icon={<PersonOffIcon sx={{ fontSize: 64, opacity: 0.3 }} />}
+              message="Lớp này chưa có học sinh."
+            />
           ) : null}
         </Box>
       </Box>
@@ -891,31 +869,7 @@ const FaceAttendancePanel = () => {
                 <Typography variant="h4" color="success.main" fontWeight="bold">Điểm danh thành công!</Typography>
                 <Typography variant="subtitle1" color="text.secondary">Đã nhận diện được {scanResult.students.length} học sinh</Typography>
                 
-                <Box sx={{ 
-                  width: '100%', 
-                  mt: 2, 
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                  gap: 2, 
-                  maxHeight: '70vh', 
-                  overflowY: 'overlay', 
-                  p: 1.5,
-                  '&::-webkit-scrollbar': { 
-                    width: '8px',
-                  },
-                  '&::-webkit-scrollbar-track': { 
-                    background: 'transparent', 
-                  },
-                  '&::-webkit-scrollbar-thumb': { 
-                    background: 'linear-gradient(to bottom, #a855f7, #ec4899)', 
-                    borderRadius: '10px',
-                  },
-                  '&::-webkit-scrollbar-thumb:hover': { 
-                    background: 'linear-gradient(to bottom, #c084fc, #f472b6)', 
-                  },
-                  '&::-webkit-scrollbar-button:vertical:start:increment': { display: 'block', height: '16px' },
-                  '&::-webkit-scrollbar-button:vertical:end:increment': { display: 'block', height: '16px' }
-                }}>
+                <PremiumScrollContainer component="box" maxHeight="70vh" sx={{ p: 1.5 }}>
                   {scanResult.students.map((student) => (
                     <Paper key={student.id} variant="outlined" sx={{ p: 2, borderRadius: 3, display: 'flex', alignItems: 'center', gap: 3, bgcolor: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)' }}>
                       <Avatar src={student.photo_url || undefined} sx={{ width: 64, height: 64, border: '2px solid #fff', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }} imgProps={{ crossOrigin: 'anonymous' }}>
@@ -929,7 +883,7 @@ const FaceAttendancePanel = () => {
                       </Box>
                     </Paper>
                   ))}
-                </Box>
+                </PremiumScrollContainer>
               </Box>
             ) : scanResult.type === 'success' && !scanResult.students ? (
                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, my: 2 }}>
@@ -1002,7 +956,16 @@ const FaceAttendancePanel = () => {
            <AccessTimeIcon sx={{ mr: 1, color: 'warning.main', fontSize: 20 }} /> Đánh dấu: Đi muộn
         </MenuItem>
         <Divider sx={{ my: 1, opacity: 0.1 }} />
-        <MenuItem onClick={() => sessionId && overrideMenu && removeMarkMut.mutate({ student_id: overrideMenu.studentId, session_id: sessionId })} sx={{ color: 'error.main' }}>
+        <MenuItem onClick={() => {
+          if (!sessionId || !overrideMenu) return;
+          openConfirm({
+            title: 'Hủy điểm danh',
+            message: 'Bạn có chắc chắn muốn hủy ghi nhận điểm danh cho học sinh này?',
+            onConfirm: () => removeMarkMut.mutate({ student_id: overrideMenu.studentId, session_id: sessionId }),
+            isPending: removeMarkMut.isPending
+          });
+          setOverrideMenu(null);
+        }} sx={{ color: 'error.main' }}>
            <PersonOffIcon sx={{ mr: 1, fontSize: 20 }} /> Đánh dấu: Vắng mặt
         </MenuItem>
       </Menu>
