@@ -21,8 +21,8 @@ export const createBulkStudents = async (students: any[]): Promise<StudentData[]
   return response.data;
 };
 
-export const deleteStudent = async (id: string): Promise<StudentData> => {
-  const response = await http.delete(`/students/${id}`);
+export const deleteStudent = async (id: string, archive: boolean = true): Promise<StudentData> => {
+  const response = await http.delete(`/students/${id}`, { data: { archive } });
   return response.data;
 };
 

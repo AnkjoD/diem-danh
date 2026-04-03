@@ -1,22 +1,29 @@
 import { useState, useEffect, useRef } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  Box, Typography, Paper, Button, Select, MenuItem, FormControl, InputLabel,
-  Alert, Chip, Table, TableHead, TableBody, TableRow, TableCell, TableContainer,
-  Avatar, CircularProgress, TextField, Badge, LinearProgress
-} from '@mui/material';
-import CameraAltIcon from '@mui/icons-material/CameraAlt';
+import GridViewIcon from '@mui/icons-material/GridView';
+import ViewListIcon from '@mui/icons-material/ViewList';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import PersonOffIcon from '@mui/icons-material/PersonOff';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import HighlightOffIcon from '@mui/icons-material/HighlightOff';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import TodayIcon from '@mui/icons-material/Today';
-import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import { Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
+import CollectionsIcon from '@mui/icons-material/Collections';
+import CameraAltIcon from '@mui/icons-material/CameraAlt';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  Box, Typography, Paper, Button, Select, FormControl, InputLabel,
+  Alert, Chip, Table, TableHead, TableBody, TableRow, TableCell, TableContainer,
+  Avatar, CircularProgress, TextField, Badge, LinearProgress,
+  Dialog, DialogTitle, DialogContent, DialogActions, Grid, IconButton,
+  Card, CardContent, Menu, MenuItem, Divider
+} from '@mui/material';
 import { getCourses } from '@/common/api/course';
 import { getClasses, getAssignedStudents } from '@/common/api/class';
 import { createSession, getTodaySession, updateSession } from '@/common/api/session';
-import { recognizeAttendanceFace } from '@/common/api/attendance';
+import { recognizeAttendanceFace, markAttendanceManual, removeAttendance } from '@/common/api/attendance';
 import { StudentData } from '@/common/interfaces/student';
 import { AttendanceData } from '@/common/interfaces/attendance';
 
@@ -33,6 +40,11 @@ const FaceAttendancePanel = () => {
 
   const [resultDialog, setResultDialog] = useState(false);
   const [scanResult, setScanResult] = useState<{ type: 'success' | 'error', students?: StudentData[], message?: string } | null>(null);
+  const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
+  const [filePreviews, setFilePreviews] = useState<string[]>([]);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
+  const [overrideMenu, setOverrideMenu] = useState<{ anchorEl: HTMLElement, studentId: string } | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -218,7 +230,7 @@ const FaceAttendancePanel = () => {
   });
 
   const recognizeMut = useMutation({
-    mutationFn: ({ blob, sId }: { blob: Blob, sId: string }) => recognizeAttendanceFace(sId, blob, 'frame.jpg'),
+    mutationFn: ({ files, sId }: { files: File[], sId: string }) => recognizeAttendanceFace(sId, files),
     onSuccess: (res) => {
       if (res.success && res.students && res.students.length > 0) {
         const newStatusMap = new Map(recognized);
@@ -227,6 +239,8 @@ const FaceAttendancePanel = () => {
         });
         setRecognized(newStatusMap);
         setScanResult({ type: 'success', students: res.students });
+        setFilesToUpload([]);
+        setFilePreviews([]);
         queryClient.invalidateQueries({ queryKey: ['today_session', selectedClass] });
       } else {
         setScanResult({ type: 'error', message: res.message || 'Hệ thống báo lỗi xử lý!' });
@@ -234,6 +248,22 @@ const FaceAttendancePanel = () => {
     },
     onError: (err: any) => {
       setScanResult({ type: 'error', message: err.message || 'Không thể kết nối đến AI Service' });
+    }
+  });
+
+  const manualMarkMut = useMutation({
+    mutationFn: (payload: { student_id: string, status: 'present' | 'late', session_id: string }) => markAttendanceManual(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['today_session', selectedClass] });
+      setOverrideMenu(null);
+    }
+  });
+
+  const removeMarkMut = useMutation({
+    mutationFn: (payload: { student_id: string, session_id: string }) => removeAttendance({ ...payload, archive: false }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['today_session', selectedClass] });
+      setOverrideMenu(null);
     }
   });
 
@@ -289,9 +319,24 @@ const FaceAttendancePanel = () => {
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const newFiles = Array.from(e.target.files || []);
+    if (newFiles.length === 0) return;
 
+    const newPreviews = newFiles.map(file => URL.createObjectURL(file));
+    setFilesToUpload(prev => [...prev, ...newFiles]);
+    setFilePreviews(prev => [...prev, ...newPreviews]);
+    e.target.value = '';
+  };
+
+  const removeSelectedFile = (index: number) => {
+    URL.revokeObjectURL(filePreviews[index]);
+    setFilesToUpload(prev => prev.filter((_, i) => i !== index));
+    setFilePreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleProcessMultiUpload = async () => {
+    if (filesToUpload.length === 0) return;
+    
     let currentSessionId = sessionId;
     if (!currentSessionId) {
       try {
@@ -308,8 +353,7 @@ const FaceAttendancePanel = () => {
 
     setResultDialog(true);
     setScanResult(null);
-    recognizeMut.mutate({ blob: file, sId: currentSessionId });
-    e.target.value = '';
+    recognizeMut.mutate({ files: filesToUpload, sId: currentSessionId });
   };
 
   const scanFrame = () => {
@@ -327,7 +371,7 @@ const FaceAttendancePanel = () => {
       if (blob && sessionId) {
         setResultDialog(true);
         setScanResult(null);
-        recognizeMut.mutate({ blob, sId: sessionId });
+        recognizeMut.mutate({ files: [new File([blob], 'capture.jpg', { type: 'image/jpeg' })], sId: sessionId });
       }
     }, 'image/jpeg', 0.8);
   };
@@ -358,11 +402,11 @@ const FaceAttendancePanel = () => {
       </Box>
 
       {selectedClass && classStudents.length > 0 && unregisteredCount > 0 && (
-        <Alert severity={noRegisteredStudents ? "error" : "warning"} sx={{ mb: 2, borderRadius: 2 }}>
-          <strong>Lưu ý:</strong> Có {unregisteredCount} học sinh trong lớp chưa đăng ký khuôn mặt! {noRegisteredStudents ? "Vui lòng đăng ký trước khi điểm danh." : "Hãy nhắc các em truy cập mục 'Học Sinh' để đăng ký."}
+        <Alert severity="warning" sx={{ mb: 2, borderRadius: 2, border: '1px solid rgba(245,158,11,0.2)' }}>
+          <strong>Lưu ý:</strong> Có {unregisteredCount} học sinh trong lớp chưa đăng ký khuôn mặt! Hãy nhắc các em đăng ký sớm để hệ thống có thể nhận diện chính xác.
           <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             {classStudents.filter((s: StudentData) => !s.face_descriptor).map((s: StudentData) => (
-              <Chip key={s.id} label={`${s.name} (${s.student_code})`} size="small" color={noRegisteredStudents ? "error" : "warning"} variant="outlined" />
+              <Chip key={s.id} label={`${s.name} (${s.student_code})`} size="small" color="warning" variant="outlined" />
             ))}
           </Box>
         </Alert>
@@ -391,7 +435,7 @@ const FaceAttendancePanel = () => {
               variant="contained"
               startIcon={createSessionMut.isPending ? <CircularProgress size={20} /> : <PlayArrowIcon />}
               onClick={startScanning}
-              disabled={!selectedClass || classStudents.length === 0 || createSessionMut.isPending || noRegisteredStudents || isTimeInvalid}
+              disabled={!selectedClass || classStudents.length === 0 || createSessionMut.isPending || isTimeInvalid}
             >
               Mở Camera
             </Button>
@@ -405,17 +449,79 @@ const FaceAttendancePanel = () => {
             variant="outlined" 
             component="label" 
             startIcon={<CloudUploadIcon />}
-            disabled={!selectedClass || classStudents.length === 0 || recognizeMut.isPending || noRegisteredStudents || isTimeInvalid}
+            disabled={!selectedClass || classStudents.length === 0 || recognizeMut.isPending || isTimeInvalid}
           >
             Tải ảnh lên
             <input 
               type="file" 
               hidden 
+              multiple
               accept="image/*" 
               onChange={handleFileUpload} 
             />
           </Button>
         </Box>
+
+        {filesToUpload.length > 0 && (
+          <Box sx={{ mt: 2, p: 2, border: '1px dashed rgba(255,255,255,0.2)', borderRadius: 3, bgcolor: 'rgba(255,255,255,0.02)' }}>
+             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="subtitle2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                   <CollectionsIcon fontSize="small" color="primary" />
+                   Danh sách ảnh đã chọn ({filesToUpload.length})
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                   <Button size="small" color="error" onClick={() => { setFilesToUpload([]); setFilePreviews([]); }}>Xóa tất cả</Button>
+                   <Button 
+                     size="small" 
+                     variant="contained" 
+                     onClick={handleProcessMultiUpload}
+                     disabled={recognizeMut.isPending}
+                   >
+                     {recognizeMut.isPending ? "Đang xử lý..." : "Bắt đầu điểm danh"}
+                   </Button>
+                </Box>
+             </Box>
+             <Box sx={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', 
+                gap: 2,
+                mt: 1
+             }}>
+                {filePreviews.map((url, i) => (
+                  <Box key={i}>
+                     <Box sx={{ 
+                        position: 'relative', 
+                        pt: '100%', 
+                        borderRadius: 2, 
+                        overflow: 'hidden', 
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        cursor: 'pointer',
+                        transition: 'transform 0.2s',
+                        '&:hover': { transform: 'scale(1.05)', border: '1px solid #7c3aed' }
+                      }}
+                      onClick={() => setPreviewImageUrl(url)}
+                     >
+                        <img 
+                          src={url} 
+                          alt="preview" 
+                          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover' }} 
+                        />
+                        <IconButton 
+                          size="small" 
+                          sx={{ position: 'absolute', top: 2, right: 2, bgcolor: 'rgba(0,0,0,0.5)', '&:hover': { bgcolor: 'rgba(0,0,0,0.7)' } }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeSelectedFile(i);
+                          }}
+                        >
+                          <HighlightOffIcon sx={{ color: '#fff', fontSize: 18 }} />
+                        </IconButton>
+                     </Box>
+                  </Box>
+                ))}
+             </Box>
+          </Box>
+        )}
 
         {selectedClass && (
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center', pt: 2, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
@@ -555,7 +661,7 @@ const FaceAttendancePanel = () => {
                     <Typography variant="caption" color="text.secondary" fontWeight="bold" sx={{ letterSpacing: 1.2 }}>
                       TIẾN ĐỘ ĐIỂM DANH ({recognizedCount}/{totalStudents})
                     </Typography>
-                    <Typography variant="subtitle2" color="primary" fontWeight="bold">
+                    <Typography variant="subtitle2" color="primary" sx={{ fontWeight: 'bold', textShadow: '0 0 8px rgba(168, 85, 247, 0.5)' }}>
                       {Math.round(attendanceProgress)}%
                     </Typography>
                   </Box>
@@ -596,62 +702,169 @@ const FaceAttendancePanel = () => {
                s.name.toLowerCase().includes(searchAttTerm.toLowerCase()) || 
                s.student_code.toLowerCase().includes(searchAttTerm.toLowerCase())
             );
-            return (
-            <TableContainer component={Paper} sx={{ borderRadius: 3 }}>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Ảnh</TableCell>
-                    <TableCell>Họ tên</TableCell>
-                    <TableCell>Mã SV</TableCell>
-                    <TableCell align="center">Trạng thái</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {filteredClassStudents.map((s: StudentData) => (
-                    <TableRow key={s.id} sx={{
-                      bgcolor: recognized.has(s.id) ? (recognized.get(s.id) === 'late' ? 'rgba(245,158,11,0.1)' : 'rgba(34,197,94,0.1)') : undefined,
-                      transition: 'background-color 0.5s',
-                    }}>
-                      <TableCell>
-                        <Badge
-                          overlap="circular"
-                          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                          variant="dot"
-                          color={recognized.get(s.id) === 'present' ? "success" : recognized.get(s.id) === 'late' ? "warning" : "error"}
-                          sx={{ 
-                            '& .MuiBadge-badge': { 
-                              width: 12, 
-                              height: 12, 
-                              borderRadius: '50%', 
-                              border: '2px solid #1e1e1e',
-                              bgcolor: !recognized.has(s.id) ? '#666' : undefined
-                            } 
-                          }}
-                        >
-                          <Avatar src={s.photo_url || undefined} sx={{ width: 32, height: 32 }} imgProps={{ crossOrigin: 'anonymous' }}>{s.name[0]}</Avatar>
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{s.name}</TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace' }}>{s.student_code}</TableCell>
-                      <TableCell align="center">
-                        {recognized.has(s.id) ? (
-                          <Chip 
-                            icon={<CheckCircleIcon />} 
-                            label={recognized.get(s.id) === 'late' ? "Đi muộn" : "Có mặt"} 
-                            color={recognized.get(s.id) === 'late' ? "warning" : "success"} 
-                            size="small" 
-                          />
-                        ) : (
-                          <Chip label="Chưa điểm danh" size="small" variant="outlined" sx={{ opacity: 0.5 }} />
-                        )}
-                      </TableCell>
+            return viewMode === 'table' ? (
+              <TableContainer component={Paper} sx={{ 
+                borderRadius: 3, 
+                maxHeight: 'calc(100vh - 220px)', 
+                overflowY: 'overlay',
+                pr: 0,
+                '&::-webkit-scrollbar': { width: '8px' },
+                '&::-webkit-scrollbar-track': { background: 'transparent' },
+                '&::-webkit-scrollbar-thumb': { 
+                  background: 'linear-gradient(to bottom, #a855f7, #ec4899)', 
+                  borderRadius: '10px',
+                },
+                '&::-webkit-scrollbar-thumb:hover': { 
+                  background: 'linear-gradient(to bottom, #c084fc, #f472b6)', 
+                },
+                '&::-webkit-scrollbar-button:vertical:start:increment': { display: 'block', height: '16px' },
+                '&::-webkit-scrollbar-button:vertical:end:increment': { display: 'block', height: '16px' }
+              }}>
+                <Table size="small" stickyHeader>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Ảnh</TableCell>
+                      <TableCell>Họ tên</TableCell>
+                      <TableCell>Mã SV</TableCell>
+                      <TableCell align="center">Trạng thái</TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-            )
+                  </TableHead>
+                  <TableBody>
+                    {filteredClassStudents.map((s: StudentData) => (
+                      <TableRow key={s.id} sx={{
+                        bgcolor: recognized.has(s.id) ? (recognized.get(s.id) === 'late' ? 'rgba(245,158,11,0.1)' : 'rgba(34,197,94,0.1)') : undefined,
+                        transition: 'background-color 0.5s',
+                      }}>
+                        <TableCell>
+                          <Badge
+                            overlap="circular"
+                            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                            variant="dot"
+                            color={recognized.get(s.id) === 'present' ? "success" : recognized.get(s.id) === 'late' ? "warning" : "error"}
+                            sx={{ 
+                              '& .MuiBadge-badge': { 
+                                width: 12, 
+                                height: 12, 
+                                borderRadius: '50%', 
+                                border: '2px solid #1e1e1e',
+                                bgcolor: !recognized.has(s.id) ? '#666' : undefined
+                              } 
+                            }}
+                          >
+                            <Avatar src={s.photo_url || undefined} sx={{ width: 32, height: 32 }} imgProps={{ crossOrigin: 'anonymous' }}>{s.name[0]}</Avatar>
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{s.name}</TableCell>
+                        <TableCell sx={{ fontFamily: 'monospace' }}>{s.student_code}</TableCell>
+                        <TableCell align="center">
+                          {recognized.has(s.id) ? (
+                            <Chip 
+                              icon={<CheckCircleIcon />} 
+                              label={recognized.get(s.id) === 'late' ? "Đi muộn" : "Có mặt"} 
+                              color={recognized.get(s.id) === 'late' ? "warning" : "success"} 
+                              size="small" 
+                              onClick={(e) => setOverrideMenu({ anchorEl: e.currentTarget, studentId: s.id })}
+                            />
+                          ) : (
+                            <Chip 
+                              label="Vắng / Chờ" 
+                              size="small" 
+                              variant="outlined" 
+                              sx={{ opacity: 0.5 }} 
+                              onClick={(e) => setOverrideMenu({ anchorEl: e.currentTarget, studentId: s.id })}
+                            />
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            ) : (
+              // GRID VIEW
+              <Box sx={{ 
+                display: 'grid', 
+                gridTemplateColumns: {
+                  xs: '1fr',
+                  sm: 'repeat(auto-fill, minmax(280px, 1fr))',
+                  lg: 'repeat(auto-fill, minmax(320px, 1fr))',
+                },
+                gap: 2,
+                maxHeight: 'calc(100vh - 220px)', 
+                overflowY: 'overlay', 
+                p: 0.5,
+                pr: 1.5,
+                '&::-webkit-scrollbar': { width: '8px' },
+                '&::-webkit-scrollbar-track': { background: 'transparent' },
+                '&::-webkit-scrollbar-thumb': { 
+                  background: 'linear-gradient(to bottom, #a855f7, #ec4899)', 
+                  borderRadius: '10px',
+                },
+                '&::-webkit-scrollbar-thumb:hover': { 
+                  background: 'linear-gradient(to bottom, #c084fc, #f472b6)', 
+                },
+                '&::-webkit-scrollbar-button:vertical:start:increment': { display: 'block', height: '16px' },
+                '&::-webkit-scrollbar-button:vertical:end:increment': { display: 'block', height: '16px' }
+              }}>
+                {filteredClassStudents.map((s: StudentData) => {
+                  const status = recognized.get(s.id);
+                  const isPresent = status === 'present';
+                  const isLate = status === 'late';
+                  return (
+                    <Box key={s.id}>
+                      <Card sx={{ 
+                        borderRadius: 3,
+                        height: '100%',
+                        border: '1px solid',
+                        borderColor: isPresent ? 'rgba(34,197,94,0.3)' : isLate ? 'rgba(245,158,11,0.3)' : 'rgba(255,255,255,0.08)',
+                        bgcolor: isPresent ? 'rgba(34,197,94,0.05)' : isLate ? 'rgba(245,158,11,0.05)' : 'rgba(255,255,255,0.02)',
+                        transition: 'all 0.3s ease',
+                        boxShadow: s.face_descriptor ? '0 0 10px rgba(168, 85, 247, 0.15)' : 'none',
+                        '&:hover': {
+                           transform: 'translateY(-4px)',
+                           boxShadow: s.face_descriptor ? '0 0 15px rgba(168, 85, 247, 0.3)' : 6
+                        }
+                      }}>
+                        <CardContent sx={{ p: 2, '&:last-child': { pb: 2 }, display: 'flex', flexDirection: 'column', height: '100%' }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Badge
+                              overlap="circular"
+                              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                              badgeContent={
+                                isPresent ? <CheckCircleIcon sx={{ fontSize: 16, color: '#22c55e' }} /> : 
+                                isLate ? <AccessTimeIcon sx={{ fontSize: 16, color: '#f59e0b' }} /> :
+                                <PersonOffIcon sx={{ fontSize: 16, color: '#ef4444' }} />
+                              }
+                            >
+                              <Avatar 
+                                src={s.photo_url || undefined} 
+                                sx={{ width: 50, height: 50, border: '2px solid rgba(255,255,255,0.1)' }}
+                                imgProps={{ crossOrigin: 'anonymous' }}
+                              >
+                                {s.name[0]}
+                              </Avatar>
+                            </Badge>
+                            <Box sx={{ minWidth: 0, flex: 1 }}>
+                              <Typography variant="subtitle2" fontWeight="bold" noWrap>{s.name}</Typography>
+                              <Typography variant="caption" color="text.secondary" fontFamily="monospace">{s.student_code}</Typography>
+                            </Box>
+                            <Box onClick={(e) => { e.stopPropagation(); setOverrideMenu({ anchorEl: e.currentTarget, studentId: s.id }); }}>
+                              {isPresent ? (
+                                <Chip label="Có mặt" size="small" color="success" sx={{ height: 20, fontSize: '0.65rem', cursor: 'pointer' }} />
+                              ) : isLate ? (
+                                <Chip label="Đi muộn" size="small" color="warning" sx={{ height: 20, fontSize: '0.65rem', cursor: 'pointer' }} />
+                              ) : (
+                                <Chip label="Vắng" size="small" color="error" variant="outlined" sx={{ height: 20, fontSize: '0.65rem', opacity: 0.6, cursor: 'pointer' }} />
+                              )}
+                            </Box>
+                          </Box>
+                        </CardContent>
+                      </Card>
+                    </Box>
+                  );
+                })}
+              </Box>
+            );
           })() : selectedClass ? (
             <Paper sx={{ p: 3, textAlign: 'center', borderRadius: 3 }}>
               <Typography color="text.secondary">Lớp này chưa có học sinh.</Typography>
@@ -678,7 +891,31 @@ const FaceAttendancePanel = () => {
                 <Typography variant="h4" color="success.main" fontWeight="bold">Điểm danh thành công!</Typography>
                 <Typography variant="subtitle1" color="text.secondary">Đã nhận diện được {scanResult.students.length} học sinh</Typography>
                 
-                <Box sx={{ width: '100%', mt: 2, display: 'flex', flexDirection: 'column', gap: 2, maxHeight: '400px', overflowY: 'auto', p: 1 }}>
+                <Box sx={{ 
+                  width: '100%', 
+                  mt: 2, 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  gap: 2, 
+                  maxHeight: '70vh', 
+                  overflowY: 'overlay', 
+                  p: 1.5,
+                  '&::-webkit-scrollbar': { 
+                    width: '8px',
+                  },
+                  '&::-webkit-scrollbar-track': { 
+                    background: 'transparent', 
+                  },
+                  '&::-webkit-scrollbar-thumb': { 
+                    background: 'linear-gradient(to bottom, #a855f7, #ec4899)', 
+                    borderRadius: '10px',
+                  },
+                  '&::-webkit-scrollbar-thumb:hover': { 
+                    background: 'linear-gradient(to bottom, #c084fc, #f472b6)', 
+                  },
+                  '&::-webkit-scrollbar-button:vertical:start:increment': { display: 'block', height: '16px' },
+                  '&::-webkit-scrollbar-button:vertical:end:increment': { display: 'block', height: '16px' }
+                }}>
                   {scanResult.students.map((student) => (
                     <Paper key={student.id} variant="outlined" sx={{ p: 2, borderRadius: 3, display: 'flex', alignItems: 'center', gap: 3, bgcolor: 'rgba(34,197,94,0.05)', border: '1px solid rgba(34,197,94,0.2)' }}>
                       <Avatar src={student.photo_url || undefined} sx={{ width: 64, height: 64, border: '2px solid #fff', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }} imgProps={{ crossOrigin: 'anonymous' }}>
@@ -721,6 +958,54 @@ const FaceAttendancePanel = () => {
           </Button>
         </DialogActions>
       </Dialog>
+      {/* Zoom Preview Dialog */}
+      <Dialog 
+        open={!!previewImageUrl} 
+        onClose={() => setPreviewImageUrl(null)}
+        maxWidth="lg"
+      >
+        <Box sx={{ position: 'relative', bgcolor: '#000' }}>
+            <IconButton 
+                onClick={() => setPreviewImageUrl(null)}
+                sx={{ position: 'absolute', top: 8, right: 8, color: '#fff', bgcolor: 'rgba(0,0,0,0.5)' }}
+            >
+                <HighlightOffIcon />
+            </IconButton>
+            {previewImageUrl && (
+                <img 
+                    src={previewImageUrl} 
+                    alt="Zoomed" 
+                    style={{ maxWidth: '100%', maxHeight: '90vh', display: 'block' }} 
+                />
+            )}
+        </Box>
+      </Dialog>
+
+      {/* Manual Override Menu */}
+      <Menu
+        anchorEl={overrideMenu?.anchorEl}
+        open={Boolean(overrideMenu)}
+        onClose={() => setOverrideMenu(null)}
+        PaperProps={{
+          sx: {
+            bgcolor: 'background.paper',
+            border: '1px solid rgba(168, 85, 247, 0.2)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+            borderRadius: 2
+          }
+        }}
+      >
+        <MenuItem onClick={() => sessionId && overrideMenu && manualMarkMut.mutate({ student_id: overrideMenu.studentId, status: 'present', session_id: sessionId })}>
+           <CheckCircleIcon sx={{ mr: 1, color: 'success.main', fontSize: 20 }} /> Đánh dấu: Có mặt
+        </MenuItem>
+        <MenuItem onClick={() => sessionId && overrideMenu && manualMarkMut.mutate({ student_id: overrideMenu.studentId, status: 'late', session_id: sessionId })}>
+           <AccessTimeIcon sx={{ mr: 1, color: 'warning.main', fontSize: 20 }} /> Đánh dấu: Đi muộn
+        </MenuItem>
+        <Divider sx={{ my: 1, opacity: 0.1 }} />
+        <MenuItem onClick={() => sessionId && overrideMenu && removeMarkMut.mutate({ student_id: overrideMenu.studentId, session_id: sessionId })} sx={{ color: 'error.main' }}>
+           <PersonOffIcon sx={{ mr: 1, fontSize: 20 }} /> Đánh dấu: Vắng mặt
+        </MenuItem>
+      </Menu>
     </Box>
   );
 };

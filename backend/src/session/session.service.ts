@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository, Between, Not, IsNull } from 'typeorm';
 import { Session } from './entities/session.entity';
 import { ClassStudent } from '../class-student/entities/class-student.entity';
 import { Attendance } from '../attendance/entities/attendance.entity';
+import { MinioService } from '../minio/minio.service';
 
 @Injectable()
 export class SessionService {
@@ -14,6 +15,7 @@ export class SessionService {
     private readonly classStudentRepo: Repository<ClassStudent>,
     @InjectRepository(Attendance)
     private readonly attendanceRepo: Repository<Attendance>,
+    private readonly minioService: MinioService,
   ) {}
 
   async create(classId: string, teacherId: string, lateThreshold?: string, endThreshold?: string) {
@@ -106,9 +108,40 @@ export class SessionService {
     return this.sessionRepo.save(session);
   }
 
-  async remove(id: string, teacherId: string) {
+  async remove(id: string, teacherId: string, archive: boolean = true) {
     const session = await this.findOne(id, teacherId);
     if (!session) throw new NotFoundException('Session not found or unauthorized');
+
+    // 1. Process attendance frames
+    try {
+      const recordsWithPhotos = await this.attendanceRepo.find({
+        where: { session: { id }, captured_frame_url: Not(IsNull()) },
+      });
+
+      for (const record of recordsWithPhotos) {
+        if (record.captured_frame_url) {
+          const bucketMatch = record.captured_frame_url.match(/\:9000\/([^\/]+)\//);
+          const sourceBucket = bucketMatch ? bucketMatch[1] : this.minioService.buckets.frames;
+          const fullKey = record.captured_frame_url.split(`/${sourceBucket}/`)[1];
+
+          if (fullKey) {
+            if (archive) {
+              await this.minioService.moveFile(
+                fullKey, 
+                fullKey, 
+                sourceBucket, 
+                this.minioService.buckets.deleted
+              );
+            } else {
+              await this.minioService.deleteFile(fullKey, sourceBucket);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // Process failure silently or handle appropriately
+    }
+
     return this.sessionRepo.remove(session);
   }
 }

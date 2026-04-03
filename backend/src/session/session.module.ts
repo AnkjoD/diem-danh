@@ -5,9 +5,13 @@ import { SessionController } from './session.controller';
 import { Session } from './entities/session.entity';
 import { ClassStudent } from '../class-student/entities/class-student.entity';
 import { Attendance } from '../attendance/entities/attendance.entity';
+import { MinioModule } from '../minio/minio.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Session, ClassStudent, Attendance])],
+  imports: [
+    TypeOrmModule.forFeature([Session, ClassStudent, Attendance]),
+    MinioModule
+  ],
   controllers: [SessionController],
   providers: [SessionService],
   exports: [SessionService]

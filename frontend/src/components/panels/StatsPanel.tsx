@@ -15,9 +15,10 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import * as XLSX from 'xlsx';
 import { getCourses } from '@/common/api/course';
 import { getClasses } from '@/common/api/class';
-import { getSessions } from '@/common/api/session';
-import { markAttendanceManual } from '@/common/api/attendance';
+import { getSessions, deleteSession } from '@/common/api/session';
+import { markAttendanceManual, removeAttendance } from '@/common/api/attendance';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import http from '@/common/utils/http';
 
 const parseSafeDate = (val: any) => {
   if (!val) return new Date(NaN);
@@ -50,7 +51,14 @@ const StatsPanel = () => {
   const [toDate, setToDate] = useState('');
   const [detailsDialog, setDetailsDialog] = useState<any>(null);
   const [searchAttTerm, setSearchAttTerm] = useState('');
-  const [confirmDialog, setConfirmDialog] = useState<any>(null);
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: (archive?: boolean) => void;
+    showArchiveOption?: boolean;
+    isPending?: boolean;
+  } | null>(null);
   
   const queryClient = useQueryClient();
 
@@ -60,17 +68,15 @@ const StatsPanel = () => {
 
   const sessionsByDate = useMemo(() => {
     const groups: Record<string, any> = {};
-    // Ensure sessions is an array, handle possible { data: [] } wrapper
     const rawSessions = Array.isArray(sessions) ? sessions : (sessions as any)?.data || [];
     
-    rawSessions.forEach((s: any, idx: number) => {
+    rawSessions.forEach((s: any) => {
       const dateVal = s.created_at || s.createdAt;
       let d = parseSafeDate(dateVal);
       
-      // Fallback to session_id if it's a numeric timestamp
       if (isNaN(d.getTime())) {
-         const numericId = Number(s.session_id) || Number(s.id); // Try both s.session_id and s.id
-         if (!isNaN(numericId) && numericId > 10000000000) { // Sanity check for timestamp
+         const numericId = Number(s.session_id) || Number(s.id);
+         if (!isNaN(numericId) && numericId > 10000000000) {
             d = new Date(numericId);
          }
       }
@@ -122,17 +128,13 @@ const StatsPanel = () => {
       
       if (fromDate) {
         const fDate = parseSafeDate(fromDate);
-        if (!isNaN(fDate.getTime()) && sessionTime < fDate.getTime()) {
-           return false;
-        }
+        if (!isNaN(fDate.getTime()) && sessionTime < fDate.getTime()) return false;
       }
       if (toDate) {
         const tDate = parseSafeDate(toDate);
         if (!isNaN(tDate.getTime())) {
           tDate.setHours(23, 59, 59, 999);
-          if (sessionTime > tDate.getTime()) {
-             return false;
-          }
+          if (sessionTime > tDate.getTime()) return false;
         }
       }
       return true;
@@ -159,33 +161,38 @@ const StatsPanel = () => {
     }
   });
 
+  const deleteSessionMut = useMutation({
+    mutationFn: ({ id, archive }: { id: string, archive: boolean }) => deleteSession(id, archive),
+    onSuccess: () => {
+       queryClient.invalidateQueries({ queryKey: ['sessions', selectedClass] });
+       setDetailsDialog(null);
+       setConfirmState(null);
+    }
+  });
+
+  const removeAttendanceMut = useMutation({
+    mutationFn: (payload: { session_id: string, student_id: string, archive?: boolean }) => removeAttendance(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions', selectedClass] });
+      setConfirmState(null);
+    }
+  });
+
   const exportToExcel = () => {
     if (filteredSessions.length === 0) return;
-
     const subjectName = subjects.find((s: any) => s.id === selectedSubject)?.name || '';
     const className = classes.find((c: any) => c.id === selectedClass)?.name || '';
-
     const rows: any[] = [];
     filteredSessions.forEach((s: any) => {
       const sessionDate = parseSafeDate(s.created_at);
-      let displayDate = 'N/A';
-      if (!isNaN(sessionDate.getTime())) {
-         displayDate = sessionDate.toLocaleDateString('vi-VN');
-      } else if (s.session_id && !isNaN(Number(s.session_id))) {
-         displayDate = new Date(Number(s.session_id)).toLocaleDateString('vi-VN');
-      }
-      
+      let displayDate = isNaN(sessionDate.getTime()) ? 'N/A' : sessionDate.toLocaleDateString('vi-VN');
       (s.attendances || []).forEach((r: any) => {
         const statusMap: Record<string, string> = { present: 'Có mặt', absent: 'Vắng', late: 'Muộn' };
-        
         let recognizedAtStr = '';
         if (r.recognized_at) {
           const recDate = parseSafeDate(r.recognized_at);
-          if (!isNaN(recDate.getTime())) {
-            recognizedAtStr = recDate.toLocaleString('vi-VN');
-          }
+          if (!isNaN(recDate.getTime())) recognizedAtStr = recDate.toLocaleString('vi-VN');
         }
-
         rows.push({
           'Ngày': displayDate,
           'Mã SV': r.student?.student_code || '',
@@ -195,13 +202,9 @@ const StatsPanel = () => {
         });
       });
     });
-
-    if (rows.length === 0) return;
-
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Điểm danh');
-
     const summaryRows = [
       { 'Thông tin': 'Môn học', 'Giá trị': subjectName },
       { 'Thông tin': 'Lớp', 'Giá trị': className },
@@ -212,9 +215,7 @@ const StatsPanel = () => {
       { 'Thông tin': 'Muộn', 'Giá trị': stats.late },
       { 'Thông tin': 'Tỉ lệ có mặt', 'Giá trị': stats.total > 0 ? `${Math.round((stats.present / stats.total) * 100)}%` : '0%' },
     ];
-    const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
-    XLSX.utils.book_append_sheet(wb, wsSummary, 'Tổng hợp');
-
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'Tổng hợp');
     XLSX.writeFile(wb, `Diem_danh_${className}_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
@@ -243,45 +244,12 @@ const StatsPanel = () => {
               {classes.map((c: any) => <MenuItem key={c.id} value={c.id}>{c.name} ({c.type === 'theory' ? 'LT' : 'TH'})</MenuItem>)}
             </Select>
           </FormControl>
-          <TextField
-            label="Từ ngày"
-            type="date"
-            InputLabelProps={{ shrink: true }}
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-            disabled={!selectedClass}
-            size="small"
-            sx={{ 
-              '& input::-webkit-calendar-picker-indicator': {
-                filter: 'invert(1)',
-                cursor: 'pointer',
-              }
-            }}
-          />
-          <TextField
-            label="Đến ngày"
-            type="date"
-            InputLabelProps={{ shrink: true }}
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-            disabled={!selectedClass}
-            size="small"
-            sx={{ 
-              '& input::-webkit-calendar-picker-indicator': {
-                filter: 'invert(1)',
-                cursor: 'pointer',
-              }
-            }}
-          />
-          {filteredSessions.length > 0 && (
-            <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportToExcel} sx={{ ml: 'auto' }}>
-              Xuất Excel
-            </Button>
-          )}
+          <TextField label="Từ ngày" type="date" InputLabelProps={{ shrink: true }} value={fromDate} onChange={(e) => setFromDate(e.target.value)} disabled={!selectedClass} size="small" sx={{ '& input::-webkit-calendar-picker-indicator': { filter: 'invert(1)', cursor: 'pointer' } }} />
+          <TextField label="Đến ngày" type="date" InputLabelProps={{ shrink: true }} value={toDate} onChange={(e) => setToDate(e.target.value)} disabled={!selectedClass} size="small" sx={{ '& input::-webkit-calendar-picker-indicator': { filter: 'invert(1)', cursor: 'pointer' } }} />
+          {filteredSessions.length > 0 && <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportToExcel} sx={{ ml: 'auto' }}>Xuất Excel</Button>}
         </Box>
       </Paper>
 
-      {/* Stat Cards */}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2,1fr)', md: 'repeat(4,1fr)' }, gap: 2, mb: 3 }}>
         {statCards.map((card) => (
           <Paper key={card.label} sx={{ p: 2.5, borderRadius: 3, position: 'relative', overflow: 'hidden' }}>
@@ -289,9 +257,7 @@ const StatsPanel = () => {
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, pl: 1 }}>
               <Box sx={{ color: 'primary.light', opacity: 0.7 }}>{card.icon}</Box>
               <Box>
-                <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 1 }}>
-                  {card.label}
-                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 1 }}>{card.label}</Typography>
                 <Typography variant="h4" fontFamily='"Cinzel", serif' fontWeight={700}>{card.value}</Typography>
               </Box>
             </Box>
@@ -299,9 +265,24 @@ const StatsPanel = () => {
         ))}
       </Box>
 
-      {/* Sessions */}
       {filteredSessions.length > 0 && (
-        <TableContainer component={Paper} sx={{ borderRadius: 3 }}>
+        <TableContainer component={Paper} sx={{ 
+          borderRadius: 3,
+          maxHeight: 'calc(100vh - 400px)',
+          overflowY: 'overlay',
+          pr: 0,
+          '&::-webkit-scrollbar': { width: '8px' },
+          '&::-webkit-scrollbar-track': { background: 'transparent' },
+          '&::-webkit-scrollbar-thumb': { 
+            background: 'linear-gradient(to bottom, #a855f7, #ec4899)', 
+            borderRadius: '10px',
+          },
+          '&::-webkit-scrollbar-thumb:hover': { 
+            background: 'linear-gradient(to bottom, #c084fc, #f472b6)', 
+          },
+          '&::-webkit-scrollbar-button:vertical:start:increment': { display: 'block', height: '16px' },
+          '&::-webkit-scrollbar-button:vertical:end:increment': { display: 'block', height: '16px' }
+        }}>
           <Table>
             <TableHead>
               <TableRow>
@@ -322,7 +303,6 @@ const StatsPanel = () => {
                 const l = records.filter((r: any) => r.status === 'late').length;
                 const total = records.length;
                 const progress = total > 0 ? ((p + l) / total) * 100 : 0;
-                
                 return (
                   <TableRow key={s.id} hover>
                     <TableCell sx={{ fontWeight: 'bold' }}>{s.displayDate}</TableCell>
@@ -332,16 +312,22 @@ const StatsPanel = () => {
                     <TableCell align="center" sx={{ fontWeight: 'bold' }}>{total}</TableCell>
                     <TableCell align="center" sx={{ minWidth: 120 }}>
                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                         <LinearProgress 
-                           variant="determinate" 
-                           value={progress} 
-                           sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.05)' }} 
-                         />
+                         <LinearProgress variant="determinate" value={progress} sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.05)' }} />
                          <Typography variant="caption" sx={{ minWidth: 25 }}>{Math.round(progress)}%</Typography>
                        </Box>
                     </TableCell>
                     <TableCell align="center">
-                       <Button size="small" variant="outlined" onClick={() => setDetailsDialog(s)}>Xem</Button>
+                       <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>
+                          <Button size="small" variant="outlined" onClick={() => setDetailsDialog(s)}>Xem</Button>
+                          <IconButton size="small" color="error" onClick={() => setConfirmState({
+                            open: true,
+                            title: 'Xóa buổi học',
+                            message: `Bạn có chắc chắn muốn xóa toàn bộ dữ liệu của buổi học ngày ${s.displayDate}?\n(Dữ liệu điểm danh của tất cả học sinh trong buổi này sẽ bị mất)`,
+                            showArchiveOption: true,
+                            onConfirm: (archive) => deleteSessionMut.mutate({ id: s.id, archive: !!archive }),
+                            isPending: deleteSessionMut.isPending
+                          })}><DeleteIcon fontSize="small" /></IconButton>
+                       </Box>
                     </TableCell>
                   </TableRow>
                 );
@@ -352,24 +338,15 @@ const StatsPanel = () => {
       )}
 
       {selectedClass && filteredSessions.length === 0 && (
-        <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}>
-          <Typography color="text.secondary">Chưa có buổi điểm danh nào phù hợp</Typography>
-        </Paper>
+        <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}><Typography color="text.secondary">Chưa có buổi điểm danh nào phù hợp</Typography></Paper>
       )}
 
-      {/* Session Details Dialog */}
       <Dialog open={!!detailsDialog} onClose={() => { setDetailsDialog(null); setSearchAttTerm(''); }} maxWidth="md" fullWidth>
-        <DialogTitle fontFamily='"Cinzel", serif'>
-           Chi Tiết Điểm Danh - {detailsDialog ? detailsDialog.displayDate : ''}
-        </DialogTitle>
+        <DialogTitle fontFamily='"Cinzel", serif'>Chi Tiết Điểm Danh - {detailsDialog?.displayDate}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {(() => {
              const allRecords = (detailsDialog?.attendances || []);
-             const filtered = allRecords.filter((r: any) => 
-               r.student?.name.toLowerCase().includes(searchAttTerm.toLowerCase()) || 
-               r.student?.student_code.toLowerCase().includes(searchAttTerm.toLowerCase())
-             );
-             
+             const filtered = allRecords.filter((r: any) => r.student?.name.toLowerCase().includes(searchAttTerm.toLowerCase()) || r.student?.student_code.toLowerCase().includes(searchAttTerm.toLowerCase()));
              const p = allRecords.filter((r: any) => r.status === 'present').length;
              const l = allRecords.filter((r: any) => r.status === 'late').length;
              const a = allRecords.filter((r: any) => r.status === 'absent').length;
@@ -378,79 +355,57 @@ const StatsPanel = () => {
 
              return (
                <>
-                <Paper elevation={0} sx={{ 
-                  p: 2.5, 
-                  bgcolor: 'rgba(255,255,255,0.03)', 
-                  borderRadius: 3, 
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  mb: 1,
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.1)'
-                }}>
+                <Paper elevation={0} sx={{ p: 2.5, bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 3, border: '1px solid rgba(255,255,255,0.08)', mb: 1, boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap' }}>
                     <Box sx={{ flex: 1, minWidth: 200 }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                         <Typography variant="caption" color="text.secondary" fontWeight="bold" sx={{ letterSpacing: 1.1 }}>
-                           TIẾN ĐỘ BUỔI HỌC ({p+l}/{total})
-                         </Typography>
+                         <Typography variant="caption" color="text.secondary" fontWeight="bold" sx={{ letterSpacing: 1.1 }}>TIẾN ĐỘ BUỔI HỌC ({p+l}/{total})</Typography>
                          <Typography variant="subtitle2" color="primary" fontWeight="bold">{Math.round(prog)}%</Typography>
                       </Box>
-                      <LinearProgress 
-                        variant="determinate" 
-                        value={prog} 
-                        sx={{ height: 10, borderRadius: 5, bgcolor: 'rgba(255,255,255,0.08)', '& .MuiLinearProgress-bar': { borderRadius: 5 } }} 
-                      />
+                      <LinearProgress variant="determinate" value={prog} sx={{ height: 10, borderRadius: 5, bgcolor: 'rgba(255,255,255,0.08)', '& .MuiLinearProgress-bar': { borderRadius: 5 } }} />
                     </Box>
-                    
                     <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                      <Badge badgeContent={p} color="success" showZero overlap="rectangular">
-                        <Chip label="Có mặt" size="small" color="success" variant="outlined" sx={{ fontWeight: 600, py: 1.8 }} />
-                      </Badge>
-                      <Badge badgeContent={l} color="warning" showZero overlap="rectangular">
-                        <Chip label="Đi muộn" size="small" color="warning" variant="outlined" sx={{ fontWeight: 600, py: 1.8 }} />
-                      </Badge>
-                      <Badge badgeContent={a} color="error" showZero overlap="rectangular">
-                        <Chip label="Vắng" size="small" color="error" variant="outlined" sx={{ fontWeight: 600, py: 1.8, opacity: 0.8 }} />
-                      </Badge>
+                      <Badge badgeContent={p} color="success" showZero overlap="rectangular"><Chip label="Có mặt" size="small" color="success" variant="outlined" sx={{ fontWeight: 600, py: 1.8 }} /></Badge>
+                      <Badge badgeContent={l} color="warning" showZero overlap="rectangular"><Chip label="Đi muộn" size="small" color="warning" variant="outlined" sx={{ fontWeight: 600, py: 1.8 }} /></Badge>
+                      <Badge badgeContent={a} color="error" showZero overlap="rectangular"><Chip label="Vắng" size="small" color="error" variant="outlined" sx={{ fontWeight: 600, py: 1.8, opacity: 0.8 }} /></Badge>
                     </Box>
                   </Box>
                 </Paper>
-
-                <TextField 
-                  size="small" 
-                  placeholder="Tìm MSSV hoặc tên học sinh..." 
-                  autoFocus
-                  value={searchAttTerm}
-                  onChange={(e) => setSearchAttTerm(e.target.value)}
-                  fullWidth
-                />
-
-                <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3, border: '1px solid rgba(255,255,255,0.1)' }}>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Họ tên</TableCell>
-                        <TableCell>MSSV</TableCell>
-                        <TableCell align="center">Trạng thái</TableCell>
-                        <TableCell align="center">Thao tác</TableCell>
-                      </TableRow>
-                    </TableHead>
+                <TextField size="small" placeholder="Tìm MSSV hoặc tên học sinh..." autoFocus value={searchAttTerm} onChange={(e) => setSearchAttTerm(e.target.value)} fullWidth />
+                <TableContainer component={Paper} variant="outlined" sx={{ 
+                  borderRadius: 3, 
+                  border: '1px solid rgba(255,255,255,0.1)', 
+                  maxHeight: '55vh', 
+                  overflowY: 'overlay',
+                  pr: 0,
+                  '&::-webkit-scrollbar': { width: '8px' },
+                  '&::-webkit-scrollbar-track': { background: 'transparent' },
+                  '&::-webkit-scrollbar-thumb': { 
+                    background: 'linear-gradient(to bottom, #a855f7, #ec4899)', 
+                    borderRadius: '10px',
+                  },
+                  '&::-webkit-scrollbar-thumb:hover': { 
+                    background: 'linear-gradient(to bottom, #c084fc, #f472b6)', 
+                  },
+                  '&::-webkit-scrollbar-button:vertical:start:increment': { display: 'block', height: '16px' },
+                  '&::-webkit-scrollbar-button:vertical:end:increment': { display: 'block', height: '16px' }
+                }}>
+                  <Table size="small" stickyHeader>
+                    <TableHead><TableRow><TableCell>Họ tên</TableCell><TableCell>MSSV</TableCell><TableCell align="center">Trạng thái</TableCell><TableCell align="center">Thao tác</TableCell></TableRow></TableHead>
                     <TableBody>
                       {filtered.map((r: any) => (
                         <TableRow key={r.id}>
                           <TableCell>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                              <Badge
-                                overlap="circular"
-                                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                                variant="dot"
-                                color={r.status === 'present' ? 'success' : r.status === 'late' ? 'warning' : 'error'}
-                                sx={{ '& .MuiBadge-badge': { width: 10, height: 10, borderRadius: '50%', border: '2px solid #1e1e1e', bgcolor: r.status === 'absent' ? '#666' : undefined } }}
-                              >
-                                <Avatar src={r.student?.photo_url || undefined} sx={{ width: 32, height: 32 }} imgProps={{ crossOrigin: 'anonymous' }}>
-                                  {r.student?.name[0]}
-                                </Avatar>
+                              <Badge overlap="circular" anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} variant="dot" color={r.status === 'present' ? 'success' : r.status === 'late' ? 'warning' : 'error'} sx={{ '& .MuiBadge-badge': { width: 10, height: 10, borderRadius: '50%', border: '2px solid #1e1e1e', bgcolor: r.status === 'absent' ? '#666' : undefined } }}>
+                                <Avatar src={r.student?.photo_url || undefined} sx={{ width: 32, height: 32 }} imgProps={{ crossOrigin: 'anonymous' }}>{r.student?.name[0]}</Avatar>
                               </Badge>
-                              <Typography variant="body2" fontWeight={500}>{r.student?.name}</Typography>
+                              <Typography variant="body2" fontWeight={500}>
+                                {r.student?.name}
+                                {!r.captured_frame_url && (r.status === 'present' || r.status === 'late') && (
+                                  <Typography component="span" variant="caption" sx={{ ml: 1, color: 'primary.main', fontWeight: 'bold' }}>(Thủ công)</Typography>
+                                )}
+                              </Typography>
                             </Box>
                           </TableCell>
                           <TableCell sx={{ fontFamily: 'monospace' }}>{r.student?.student_code}</TableCell>
@@ -460,22 +415,36 @@ const StatsPanel = () => {
                               size="small"
                               onChange={(e) => {
                                 const newStatus = e.target.value;
-                                markManualMut.mutate({ session_id: r.sessionId, student_id: r.student.id, status: newStatus });
-                                setDetailsDialog({ 
-                                  ...detailsDialog, 
-                                  attendances: detailsDialog.attendances.map((x: any) => x.id === r.id ? { ...x, status: newStatus } : x) 
-                                });
+                                if (newStatus === 'absent') {
+                                   const oldLabel = r.status === 'present' ? 'Có mặt' : 'Vào muộn';
+                                   setConfirmState({
+                                     open: true,
+                                     title: 'Xác nhận Vắng mặt',
+                                     message: `Bạn đang thực hiện chuyển trạng thái của sinh viên ${r.student?.name} từ [${oldLabel}] sang [Vắng mặt]. \n\nHành động này sẽ XÓA BỎ hoàn toàn ghi nhận thời gian điểm danh và ảnh minh chứng của sinh viên trong buổi học này. Bạn có chắc chắn muốn tiếp tục không?`,
+                                     showArchiveOption: !!r.captured_frame_url,
+                                     onConfirm: (archive) => {
+                                       removeAttendanceMut.mutate({ session_id: r.sessionId, student_id: r.student.id, archive: !!archive });
+                                       // Cập nhật UI ngay lập tức
+                                       setDetailsDialog({ 
+                                          ...detailsDialog, 
+                                          attendances: detailsDialog.attendances.map((x: any) => x.id === r.id ? { ...x, status: 'absent', recognized_at: null, captured_frame_url: null } : x) 
+                                       });
+                                     },
+                                     isPending: removeAttendanceMut.isPending
+                                   });
+                                } else {
+                                  markManualMut.mutate({ session_id: r.sessionId, student_id: r.student.id, status: newStatus });
+                                  setDetailsDialog({ 
+                                    ...detailsDialog, 
+                                    attendances: detailsDialog.attendances.map((x: any) => x.id === r.id ? { ...x, status: newStatus, recognized_at: x.recognized_at || new Date().toISOString() } : x) 
+                                  });
+                                }
                               }}
                               sx={{ 
-                                height: 32, 
-                                fontSize: '0.8125rem',
-                                '& .MuiSelect-select': { py: 0.5, display: 'flex', alignItems: 'center' },
-                                minWidth: 120,
+                                height: 32, fontSize: '0.8125rem', '& .MuiSelect-select': { py: 0.5, display: 'flex', alignItems: 'center' }, minWidth: 120,
                                 bgcolor: r.status === 'present' ? 'rgba(34,197,94,0.1)' : r.status === 'late' ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)',
                                 color: r.status === 'present' ? '#16a34a' : r.status === 'late' ? '#d97706' : '#dc2626',
-                                fontWeight: 600,
-                                borderRadius: 2,
-                                '& fieldset': { border: 'none' }
+                                fontWeight: 600, borderRadius: 2, '& fieldset': { border: 'none' }
                               }}
                             >
                               <MenuItem value="present">Có mặt</MenuItem>
@@ -484,20 +453,21 @@ const StatsPanel = () => {
                             </Select>
                           </TableCell>
                           <TableCell align="center">
-                            {r.status !== 'absent' && (
-                              <IconButton color="error" size="small" onClick={() => {
-                                 setConfirmDialog({
-                                   title: 'Gỡ điểm danh',
-                                   message: `Bạn có chắc chắn muốn gỡ điểm danh của học sinh ${r.student?.name}?\nHành động này sẽ xóa hoàn toàn ảnh minh chứng khỏi hệ thống lưu trữ (MinIO) và không thể hoàn tác!`,
-                                    onConfirm: () => {
-                                       markManualMut.mutate({ session_id: r.sessionId, student_id: r.student.id, status: 'absent' });
-                                       setDetailsDialog({ ...detailsDialog, attendances: detailsDialog.attendances.map((x: any) => x.id === r.id ? { ...x, status: 'absent' } : x) });
-                                       setConfirmDialog(null);
-                                    }
-                                 });
-                              }} disabled={markManualMut.isPending}>
-                                <DeleteIcon fontSize="small" />
-                              </IconButton>
+                            {!!r.captured_frame_url && r.status !== 'absent' && (
+                              <IconButton color="error" size="small" onClick={() => setConfirmState({
+                                open: true,
+                                title: 'Xóa dữ liệu ảnh',
+                                message: `Bạn có chắc chắn muốn xóa ảnh minh chứng điểm danh của học sinh ${r.student?.name}?`,
+                                showArchiveOption: true,
+                                onConfirm: (archive) => {
+                                   removeAttendanceMut.mutate({ session_id: r.sessionId, student_id: r.student.id, archive: !!archive });
+                                   setDetailsDialog({ 
+                                      ...detailsDialog, 
+                                      attendances: detailsDialog.attendances.map((x: any) => x.id === r.id ? { ...x, status: 'absent', captured_frame_url: null } : x) 
+                                   });
+                                },
+                                isPending: removeAttendanceMut.isPending
+                              })} disabled={removeAttendanceMut.isPending}><DeleteIcon fontSize="small" /></IconButton>
                             )}
                           </TableCell>
                         </TableRow>
@@ -505,23 +475,22 @@ const StatsPanel = () => {
                     </TableBody>
                   </Table>
                 </TableContainer>
-              </>
+               </>
              );
-           })()}
+          })()}
         </DialogContent>
-        <DialogActions>
-           <Button onClick={() => setDetailsDialog(null)}>Đóng</Button>
-        </DialogActions>
+        <DialogActions><Button onClick={() => setDetailsDialog(null)}>Đóng</Button></DialogActions>
       </Dialog>
       
-      {confirmDialog && (
+      {confirmState && (
         <ConfirmDialog
-          open={true}
-          title={confirmDialog.title}
-          message={confirmDialog.message}
-          onConfirm={confirmDialog.onConfirm}
-          onCancel={() => setConfirmDialog(null)}
-          isPending={markManualMut.isPending}
+          open={confirmState.open}
+          title={confirmState.title}
+          message={confirmState.message}
+          showArchiveOption={confirmState.showArchiveOption}
+          onConfirm={confirmState.onConfirm}
+          onCancel={() => setConfirmState(null)}
+          isPending={confirmState.isPending}
         />
       )}
     </Box>

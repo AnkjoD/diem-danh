@@ -37,6 +37,7 @@ const SubjectsPanel = () => {
   const [error, setError] = useState('');
   const [assignDialog, setAssignDialog] = useState<{ classId: string; className: string } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<any>(null);
+  const [assignSearch, setAssignSearch] = useState('');
 
   const subjectForm = useForm({ resolver: zodResolver(subjectSchema), defaultValues: { name: '' } });
   const classForm = useForm({ resolver: zodResolver(classSchema), defaultValues: { name: '', type: 'theory' as const } });
@@ -111,11 +112,8 @@ const SubjectsPanel = () => {
     }
   });
 
-  const assignMut = generateAssignMutation(true);
-  const unassignMut = generateAssignMutation(false);
-
   const bulkAssignMut = useMutation({
-    mutationFn: ({ classId, students }: { classId: string, students: any[] }) => assignBulkStudents(classId, students),
+    mutationFn: ({ classId, students, sync }: { classId: string, students: any[], sync?: boolean }) => assignBulkStudents(classId, students, sync),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['class_students', assignDialog?.classId] });
       queryClient.invalidateQueries({ queryKey: ['classes'] });
@@ -128,9 +126,60 @@ const SubjectsPanel = () => {
   const toggleStudent = (studentId: string) => {
     if (!assignDialog) return;
     if (assignedStudentIds.has(studentId)) {
-      unassignMut.mutate({ classId: assignDialog.classId, studentId });
+      unassignStudent(assignDialog.classId, studentId).then(() => {
+        queryClient.invalidateQueries({ queryKey: ['class_students', assignDialog.classId] });
+        queryClient.invalidateQueries({ queryKey: ['classes'] });
+      });
     } else {
-      assignMut.mutate({ classId: assignDialog.classId, studentId });
+      assignStudent(assignDialog.classId, studentId).then(() => {
+        queryClient.invalidateQueries({ queryKey: ['class_students', assignDialog.classId] });
+        queryClient.invalidateQueries({ queryKey: ['classes'] });
+      });
+    }
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (!assignDialog) return;
+    
+    // We only affect students currently visible in the search
+    const filteredInDialog = (allStudents as any[]).filter(s => 
+      s.name.toLowerCase().includes(assignSearch.toLowerCase()) || 
+      s.student_code.toLowerCase().includes(assignSearch.toLowerCase())
+    );
+
+    if (checked) {
+      // SYNC MODE: we want the assigned set to BE (current_assigned + filteredInDialog)
+      const currentAssigned = (assignedStudents as any[]);
+      const currentIds = new Set(currentAssigned.map(s => s.id));
+      
+      const studentsToSync = [...currentAssigned];
+      filteredInDialog.forEach(s => {
+        if (!currentIds.has(s.id)) {
+          studentsToSync.push(s);
+        }
+      });
+
+      const payload = studentsToSync.map(s => ({
+        student_code: s.student_code,
+        name: s.name,
+        email: s.email || '',
+        phone: s.phone || '',
+      }));
+
+      bulkAssignMut.mutate({ classId: assignDialog.classId, students: payload, sync: true });
+    } else {
+      // SYNC MODE: we want the assigned set to BE (current_assigned - filteredInDialog)
+      const filteredIds = new Set(filteredInDialog.map(s => s.id));
+      const studentsToSync = (assignedStudents as any[]).filter(s => !filteredIds.has(s.id));
+
+      const payload = studentsToSync.map(s => ({
+        student_code: s.student_code,
+        name: s.name,
+        email: s.email || '',
+        phone: s.phone || '',
+      }));
+
+      bulkAssignMut.mutate({ classId: assignDialog.classId, students: payload, sync: true });
     }
   };
 
@@ -143,23 +192,47 @@ const SubjectsPanel = () => {
       const wb = XLSX.read(bstr, { type: 'binary' });
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
-      const data = XLSX.utils.sheet_to_json(ws);
-      const formatted = data.map((row: any) => {
-        const student_code = String(row['MSSV'] || row['Mã SV'] || row['student_code'] || Object.values(row)[0] || '').trim();
-        const name = String(row['Họ tên'] || row['Tên'] || row['name'] || Object.values(row)[1] || '').trim();
-        const email = String(row['Email'] || row['email'] || '').trim();
+      
+      // Đọc dạng mảng để xử lý thông minh (Header vs No-Header)
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+      if (rows.length === 0) return;
+
+      let startIndex = 0;
+      let colMap = { code: 0, name: 1, email: 2, phone: 3 };
+
+      const firstRow = rows[0].map(c => String(c || '').toLowerCase().trim());
+      const hasHeader = firstRow.some(c => 
+        ['mssv', 'mã sv', 'mã số', 'họ tên', 'tên', 'email', 'sđt', 'phone'].includes(c)
+      );
+
+      if (hasHeader) {
+        startIndex = 1;
+        colMap.code = firstRow.findIndex(c => ['mssv', 'mã sv', 'mã số', 'mã số sinh viên', 'student_code'].includes(c));
+        colMap.name = firstRow.findIndex(c => ['họ tên', 'tên', 'name', 'full name', 'full_name', 'họ và tên'].includes(c));
+        colMap.email = firstRow.findIndex(c => ['email', 'thư điện tử', 'mail'].includes(c));
+        colMap.phone = firstRow.findIndex(c => ['sđt', 'số điện thoại', 'phone', 'tel'].includes(c));
+        
+        // Fallbacks
+        if (colMap.code === -1) colMap.code = 0;
+        if (colMap.name === -1) colMap.name = 1;
+        if (colMap.email === -1) colMap.email = 2;
+        if (colMap.phone === -1) colMap.phone = 3;
+      }
+
+      const formatted = rows.slice(startIndex).map((row: any[]) => {
         return {
-          student_code,
-          name,
-          email,
+          student_code: String(row[colMap.code] || '').trim(),
+          name: String(row[colMap.name] || '').trim(),
+          email: colMap.email !== -1 ? String(row[colMap.email] || '').trim() : '',
+          phone: colMap.phone !== -1 ? String(row[colMap.phone] || '').trim() : '',
           teacher_id: user?.id,
         };
-      }).filter(s => s.student_code && s.name);
+      }).filter(s => s.student_code); 
       
       if (formatted.length > 0) {
         bulkAssignMut.mutate({ classId: assignDialog.classId, students: formatted });
       } else {
-        setError('Không tìm thấy dữ liệu hợp lệ trong file (Cần cột: MSSV, Họ tên)');
+        setError('Không tìm thấy dữ liệu MSSV hợp lệ trong file');
       }
     };
     reader.readAsBinaryString(file);
@@ -308,25 +381,74 @@ const SubjectsPanel = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setClassDialog(null)}>Huỷ</Button>
-          <Button variant="contained" onClick={classForm.handleSubmit((data) => createClassMut.mutate({ ...data, course_id: classDialog!, teacher_id: user?.id }))}>Thêm</Button>
+          <Button variant="contained" onClick={classForm.handleSubmit((data) => createClassMut.mutate({ ...data, course_id: classDialog! }))}>Thêm</Button>
         </DialogActions>
       </Dialog>
 
       <Dialog open={!!assignDialog} onClose={() => setAssignDialog(null)} maxWidth="sm" fullWidth>
         <DialogTitle fontFamily='"Cinzel", serif'>Gán học sinh - {assignDialog?.className}</DialogTitle>
         <DialogContent>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2, mt: 1, alignItems: 'center' }}>
-             <Button variant="outlined" component="label" disabled={bulkAssignMut.isPending}>
-                {bulkAssignMut.isPending ? 'Đang tải...' : 'Nhập danh sách Excel'}
-                <input type="file" hidden accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" onChange={handleFileUpload} />
-             </Button>
-             <Typography variant="caption" color="text.secondary">Tên cột cần có: mssv, name, email</Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 1, mt: 1 }}>
+             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
+                <Button variant="outlined" size="small" component="label" disabled={bulkAssignMut.isPending}>
+                    {bulkAssignMut.isPending ? 'Đang tải...' : 'Nhập CSV/Excel'}
+                    <input type="file" hidden accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" onChange={handleFileUpload} />
+                </Button>
+                <TextField 
+                  size="small" 
+                  placeholder="Tìm học sinh..." 
+                  value={assignSearch} 
+                  onChange={(e) => setAssignSearch(e.target.value)} 
+                  sx={{ flexgrow: 1, minWidth: 200 }}
+                />
+                <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center' }}>
+                    {(() => {
+                       const filteredInDialog = (allStudents as any[]).filter(s => 
+                        s.name.toLowerCase().includes(assignSearch.toLowerCase()) || 
+                        s.student_code.toLowerCase().includes(assignSearch.toLowerCase())
+                      );
+                      const isAllSelected = filteredInDialog.length > 0 && filteredInDialog.every(s => assignedStudentIds.has(s.id));
+                      const isSomeSelected = filteredInDialog.length > 0 && filteredInDialog.some(s => assignedStudentIds.has(s.id)) && !isAllSelected;
+
+                      return (
+                        <>
+                          <Checkbox 
+                            size="small"
+                            checked={isAllSelected}
+                            indeterminate={isSomeSelected}
+                            onChange={(e) => handleSelectAll(e.target.checked)}
+                            disabled={bulkAssignMut.isPending}
+                          />
+                          <Typography variant="body2" sx={{ mr: 1 }}>{isAllSelected ? "Bỏ chọn" : "Chọn tất cả"}</Typography>
+                        </>
+                      );
+                    })()}
+                </Box>
+             </Box>
+             <Typography variant="caption" color="text.secondary">Tên cột mong đợi: mã sv/mssv, họ tên/tên, email, sđt</Typography>
           </Box>
           {(allStudents as any[]).length === 0 ? (
             <Typography color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>Chưa có học sinh nào. Hãy thêm học sinh trước.</Typography>
           ) : (
-            <List>
-              {(allStudents as any[]).map((student: any) => (
+            <List sx={{ 
+              maxHeight: 'calc(100vh - 250px)', 
+              overflowY: 'overlay',
+              pr: 0,
+              '&::-webkit-scrollbar': { width: '8px' },
+              '&::-webkit-scrollbar-track': { background: 'transparent' },
+              '&::-webkit-scrollbar-thumb': { 
+                background: 'linear-gradient(to bottom, #a855f7, #ec4899)', 
+                borderRadius: '10px',
+              },
+              '&::-webkit-scrollbar-thumb:hover': { 
+                background: 'linear-gradient(to bottom, #c084fc, #f472b6)', 
+              },
+              '&::-webkit-scrollbar-button:vertical:start:increment': { display: 'block', height: '16px' },
+              '&::-webkit-scrollbar-button:vertical:end:increment': { display: 'block', height: '16px' }
+            }}>
+              {(allStudents as any[])
+                .filter(s => s.name.toLowerCase().includes(assignSearch.toLowerCase()) || s.student_code.toLowerCase().includes(assignSearch.toLowerCase()))
+                .map((student: any) => (
                 <ListItem key={student.id} dense onClick={() => toggleStudent(student.id)} component="li" style={{ cursor: 'pointer' }}
                   sx={{ borderRadius: 1, mb: 0.5, bgcolor: assignedStudentIds.has(student.id) ? 'rgba(168,85,247,0.1)' : undefined }}>
                   <ListItemIcon sx={{ minWidth: 40 }}>

@@ -2,12 +2,9 @@ import { Module } from "@nestjs/common";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
 import { StudentModule } from "./student/student.module";
-import { MinioService } from "./minio/minio.service";
 import { MinioModule } from "./minio/minio.module";
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { AttendanceController } from './attendance/attendance.controller';
 import { AttendanceModule } from './attendance/attendance.module';
-import { AiService } from './ai/ai.service';
 import { AiModule } from './ai/ai.module';
 import { TeacherModule } from './teacher/teacher.module';
 import { AuthModule } from './auth/auth.module';
@@ -58,8 +55,8 @@ import { ClassModule } from './class/class.module';
     ClassStudentModule,
     ClassModule
   ],
-  controllers: [AppController, AttendanceController],
-  providers: [AppService, MinioService, AiService, {
+  controllers: [AppController],
+  providers: [AppService, {
     provide: APP_GUARD,
     useClass: AppAuthGuard,
   }],

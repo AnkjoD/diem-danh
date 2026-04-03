@@ -1,40 +1,57 @@
-import { Controller, Get, Post, Body, Param, UseInterceptors, UploadedFile, BadRequestException, Req } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { Controller, Get, Post, Body, Param, UseInterceptors, UploadedFile, BadRequestException, Req, UploadedFiles } from '@nestjs/common';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { AttendanceService } from './attendance.service';
+import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
 
+@ApiTags('Attendances')
+@ApiBearerAuth()
 @Controller('attendances')
 export class AttendanceController {
   constructor(private readonly attendanceService: AttendanceService) {}
 
   @Get('session/:sessionId')
+  @ApiOperation({ summary: 'Lấy danh sách điểm danh theo buổi học' })
   getBySession(@Param('sessionId') sessionId: string, @Req() req: any) {
-    const teacher_id = req.user._id;
+    const teacher_id = req.user._id || req.user.id;
     return this.attendanceService.getAttendanceBySession(sessionId, teacher_id);
   }
 
   @Post('manual')
+  @ApiOperation({ summary: 'Điểm danh thủ công (Có mặt, Vắng mặt, Muộn)' })
   markManual(@Body() body: { session_id: string; student_id: string; status: string }, @Req() req: any) {
-    const teacher_id = req.user._id;
+    const teacher_id = req.user._id || req.user.id;
     return this.attendanceService.markAttendanceManual(body.session_id, body.student_id, body.status, teacher_id);
   }
 
   @Post('recognize')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FilesInterceptor('files'))
+  @ApiOperation({ summary: 'Nhận diện khuôn mặt từ một hoặc nhiều ảnh' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string' },
+        files: { type: 'array', items: { type: 'string', format: 'binary' } },
+      },
+    },
+  })
   recognizeFace(
     @Body('session_id') sessionId: string,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFiles() files: Express.Multer.File[],
     @Req() req: any,
   ) {
     if (!sessionId) throw new BadRequestException('session_id is required');
-    if (!file) throw new BadRequestException('file is required');
-    const teacher_id = req.user._id;
-    return this.attendanceService.recognizeFace(sessionId, file, teacher_id);
+    if (!files || files.length === 0) throw new BadRequestException('files are required');
+    const teacher_id = req.user._id || req.user.id;
+    return this.attendanceService.recognizeFaces(sessionId, files, teacher_id);
   }
 
   @Post('remove')
-  removeAttendance(@Body() body: { session_id: string; student_id: string }, @Req() req: any) {
+  @ApiOperation({ summary: 'Gỡ điểm danh của sinh viên' })
+  removeAttendance(@Body() body: { session_id: string; student_id: string; archive?: boolean }, @Req() req: any) {
     if (!body.session_id || !body.student_id) throw new BadRequestException('session_id and student_id are required');
-    const teacher_id = req.user._id;
-    return this.attendanceService.removeAttendanceRecord(body.session_id, body.student_id, teacher_id);
+    const teacher_id = req.user._id || req.user.id;
+    return this.attendanceService.removeAttendanceRecord(body.session_id, body.student_id, teacher_id, body.archive ?? true);
   }
 }

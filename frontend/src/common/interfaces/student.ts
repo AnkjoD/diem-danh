@@ -3,6 +3,7 @@ export interface StudentData {
   name: string;
   student_code: string;
   email: string | null;
+  phone: string | null;
   teacher_id: string | null;
   face_descriptor: number[] | null;
   photo_url: string | null;
@@ -13,6 +14,7 @@ export interface CreateStudentPayload {
   name: string;
   student_code: string;
   email?: string;
+  phone?: string;
   teacher_id?: string;
 }
 

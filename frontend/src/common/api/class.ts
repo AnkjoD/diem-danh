@@ -28,8 +28,8 @@ export const assignStudent = async (classId: string, studentId: string) => {
   return response.data;
 };
 
-export const assignBulkStudents = async (classId: string, students: any[]) => {
-  const response = await http.post(`/classes/${classId}/students/bulk`, { students });
+export const assignBulkStudents = async (classId: string, students: any[], sync: boolean = false) => {
+  const response = await http.post(`/classes/${classId}/students/bulk`, { students, sync });
   return response.data;
 };
 

@@ -103,48 +103,75 @@ export class ClassService {
   }
 
   async assignStudent(classId: string, studentId: string, teacherId: string) {
-    const cls = await this.findOne(classId, teacherId);
-    if (!cls) throw new NotFoundException('Class not found or unauthorized');
+    try {
+      const cls = await this.findOne(classId, teacherId);
+      if (!cls) throw new NotFoundException('Class not found or unauthorized');
 
-    const student = await this.studentService.findOne(studentId, teacherId);
-    if (!student) throw new NotFoundException('Student not found or unauthorized');
+      const student = await this.studentService.findOne(studentId, teacherId);
+      if (!student) throw new NotFoundException('Student not found or unauthorized');
 
-    const existing = await this.classStudentRepo.findOne({
-      where: { classEntity: { id: classId }, student: { id: studentId } }
-    });
-    if (existing) return existing;
+      const existing = await this.classStudentRepo.findOne({
+        where: { classEntity: { id: classId }, student: { id: studentId } }
+      });
+      if (existing) return existing;
 
-    const assignment = this.classStudentRepo.create({
-      classEntity: { id: classId },
-      student: { id: studentId }
-    });
-    return this.classStudentRepo.save(assignment);
+      const assignment = this.classStudentRepo.create({
+        classEntity: { id: classId },
+        student: { id: studentId }
+      });
+      return this.classStudentRepo.save(assignment);
+    } catch (e) {
+      console.error('Error in assignStudent:', e);
+      throw e;
+    }
   }
 
-  async assignBulkStudents(classId: string, students: any[], teacherId: string) {
-    const cls = await this.findOne(classId, teacherId);
-    if (!cls) throw new NotFoundException('Class not found or unauthorized');
+  async assignBulkStudents(classId: string, students: any[], teacherId: string, sync: boolean = false) {
+    try {
+      const cls = await this.findOne(classId, teacherId);
+      if (!cls) throw new NotFoundException('Class not found or unauthorized');
 
-    // 1. Bulk Upsert the students into DB with teacher_id
-    const mapped = students.map(s => ({ ...s, teacher_id: teacherId }));
-    const upsertedStudents = await this.studentService.createBulk(mapped);
-    
-    const results: any[] = [];
-    // 2. Map and ensure they are all in the class (skip duplicates)
-    for (const student of upsertedStudents) {
-      const existing = await this.classStudentRepo.findOne({
-        where: { classEntity: { id: classId }, student: { id: student.id } }
+      // 1. Bulk Upsert students
+      const mapped = students.map(s => ({ ...s, teacher_id: teacherId }));
+      const upsertedStudents = await this.studentService.createBulk(mapped);
+      
+      // 2. Fetch current assignments
+      const existingAssignments = await this.classStudentRepo.find({
+        where: { classEntity: { id: classId } },
+        relations: ['student']
       });
-      if (!existing) {
-        const assignment = this.classStudentRepo.create({
-          classEntity: { id: classId },
-          student: { id: student.id }
-        });
-        await this.classStudentRepo.save(assignment);
+      const assignedStudentIds = new Set(existingAssignments.map(a => a.student.id));
+      const upsertedIds = new Set(upsertedStudents.map(s => s.id));
+
+      const toAdd: ClassStudent[] = [];
+      
+      // Check which ones to add
+      for (const student of upsertedStudents) {
+        if (!assignedStudentIds.has(student.id)) {
+          toAdd.push(this.classStudentRepo.create({
+            classEntity: { id: classId },
+            student: { id: student.id }
+          }));
+        }
       }
-      results.push(student);
+
+      if (toAdd.length > 0) {
+        await this.classStudentRepo.save(toAdd);
+      }
+
+      // 3. If sync is true, remove students NOT in the upserted list
+      if (sync) {
+        const toRemove = existingAssignments.filter(a => !upsertedIds.has(a.student.id));
+        if (toRemove.length > 0) {
+          await this.classStudentRepo.remove(toRemove);
+        }
+      }
+
+      return upsertedStudents;
+    } catch (e) {
+      console.error('Error in assignBulkStudents:', e);
+      throw e;
     }
-    return results;
   }
 
   async unassignStudent(classId: string, studentId: string, teacherId: string) {

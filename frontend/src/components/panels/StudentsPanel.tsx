@@ -13,6 +13,14 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import PersonIcon from '@mui/icons-material/Person';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
+import GridViewIcon from '@mui/icons-material/GridView';
+import ViewListIcon from '@mui/icons-material/ViewList';
+import MailOutlineIcon from '@mui/icons-material/MailOutline';
+import PhoneIphoneIcon from '@mui/icons-material/PhoneIphone';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import { 
+  Grid, Card, CardContent, CardActions, Menu, MenuItem, Tooltip, ToggleButton, ToggleButtonGroup
+} from '@mui/material';
 import * as XLSX from 'xlsx';
 import FaceRegistration from '@/components/FaceRegistration';
 import ConfirmDialog from '@/components/ConfirmDialog';
@@ -24,6 +32,7 @@ const studentSchema = z.object({
   name: z.string().min(2, 'Tên ít nhất 2 ký tự'),
   student_code: z.string().min(1, 'Mã SV không được trống'),
   email: z.string().email('Email không hợp lệ').optional().or(z.literal('')),
+  phone: z.string().min(10, 'SĐT ít nhất 10 số').max(11, 'SĐT tối đa 11 số').optional().or(z.literal('')),
 });
 
 const StudentsPanel = () => {
@@ -36,8 +45,10 @@ const StudentsPanel = () => {
   const [selected, setSelected] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [confirmDialog, setConfirmDialog] = useState<any>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
+  const [anchorEl, setAnchorEl] = useState<{ [key: string]: HTMLElement | null }>({});
 
-  const form = useForm({ resolver: zodResolver(studentSchema), defaultValues: { name: '', student_code: '', email: '' } });
+  const form = useForm({ resolver: zodResolver(studentSchema), defaultValues: { name: '', student_code: '', email: '', phone: '' } });
 
   const { data: students = [] } = useQuery({ queryKey: ['students'], queryFn: getStudents });
 
@@ -66,7 +77,7 @@ const StudentsPanel = () => {
   });
 
   const deleteStudentMut = useMutation({
-    mutationFn: deleteStudent,
+    mutationFn: ({ id, archive }: { id: string, archive: boolean }) => deleteStudent(id, archive),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['students'] });
       setSelected([]);
@@ -74,8 +85,8 @@ const StudentsPanel = () => {
   });
 
   const bulkDeleteMut = useMutation({
-    mutationFn: async (ids: string[]) => {
-      await Promise.all(ids.map(id => deleteStudent(id)));
+    mutationFn: async ({ ids, archive }: { ids: string[], archive: boolean }) => {
+      await Promise.all(ids.map(id => deleteStudent(id, archive)));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['students'] });
@@ -91,7 +102,7 @@ const StudentsPanel = () => {
   const closeDialog = () => {
     setAddDialog(false);
     setEditStudent(null);
-    form.reset({ name: '', student_code: '', email: '' });
+    form.reset({ name: '', student_code: '', email: '', phone: '' });
   };
 
   useEffect(() => {
@@ -112,16 +123,31 @@ const StudentsPanel = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [addDialog, editStudent, form]);
+  }, [addDialog, editStudent, form, user?.id]);
+
+  const filteredStudents = useMemo(() => {
+    return students.filter((s: any) => 
+      s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      s.student_code.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [students, searchTerm]);
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) setSelected(students.map((s: any) => s.id));
+    if (e.target.checked) setSelected(filteredStudents.map((s: any) => s.id));
     else setSelected([]);
   };
 
   const handleSelectOne = (e: React.ChangeEvent<HTMLInputElement>, id: string) => {
     if (e.target.checked) setSelected([...selected, id]);
     else setSelected(selected.filter(i => i !== id));
+  };
+
+  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, id: string) => {
+    setAnchorEl({ ...anchorEl, [id]: event.currentTarget });
+  };
+
+  const handleMenuClose = (id: string) => {
+    setAnchorEl({ ...anchorEl, [id]: null });
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -133,23 +159,47 @@ const StudentsPanel = () => {
       const wb = XLSX.read(bstr, { type: 'binary' });
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
-      const data = XLSX.utils.sheet_to_json(ws);
-      const formatted = data.map((row: any) => {
-        const student_code = String(row['MSSV'] || row['Mã SV'] || row['student_code'] || Object.values(row)[0] || '').trim();
-        const name = String(row['Họ tên'] || row['Tên'] || row['name'] || Object.values(row)[1] || '').trim();
-        const email = String(row['Email'] || row['email'] || '').trim();
+      
+      // Đọc dạng mảng để xử lý thông minh
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+      if (rows.length === 0) return;
+
+      let startIndex = 0;
+      let colMap = { code: 0, name: 1, email: 2, phone: 3 };
+
+      const firstRow = rows[0].map(c => String(c || '').toLowerCase().trim());
+      const hasHeader = firstRow.some(c => 
+        ['mssv', 'mã sv', 'mã số', 'họ tên', 'tên', 'email', 'sđt', 'phone'].includes(c)
+      );
+
+      if (hasHeader) {
+        startIndex = 1;
+        colMap.code = firstRow.findIndex(c => ['mssv', 'mã sv', 'mã số', 'mã số sinh viên', 'student_code'].includes(c));
+        colMap.name = firstRow.findIndex(c => ['họ tên', 'tên', 'name', 'full name'].includes(c));
+        colMap.email = firstRow.findIndex(c => ['email', 'thư điện tử', 'mail'].includes(c));
+        colMap.phone = firstRow.findIndex(c => ['sđt', 'số điện thoại', 'phone', 'tel'].includes(c));
+        
+        // Fallbacks if some columns not found by name
+        if (colMap.code === -1) colMap.code = 0;
+        if (colMap.name === -1) colMap.name = 1;
+        if (colMap.email === -1) colMap.email = 2;
+        if (colMap.phone === -1) colMap.phone = 3;
+      }
+
+      const formatted = rows.slice(startIndex).map((row: any[]) => {
         return {
-          student_code,
-          name,
-          email,
+          student_code: String(row[colMap.code] || '').trim(),
+          name: String(row[colMap.name] || '').trim(),
+          email: colMap.email !== -1 ? String(row[colMap.email] || '').trim() : '',
+          phone: colMap.phone !== -1 ? String(row[colMap.phone] || '').trim() : '',
           teacher_id: user?.id,
         };
-      }).filter(s => s.student_code && s.name);
+      }).filter(s => s.student_code && (startIndex === 0 || s.name));
       
       if (formatted.length > 0) {
         bulkCreateMut.mutate(formatted);
       } else {
-        setError('Không tìm thấy dữ liệu hợp lệ trong file (Cần cột: MSSV, Họ tên)');
+        setError('Không tìm thấy dữ liệu hợp lệ trong file');
       }
     };
     reader.readAsBinaryString(file);
@@ -177,8 +227,9 @@ const StudentsPanel = () => {
               onClick={() => {
                 setConfirmDialog({
                   title: 'Xóa hàng loạt',
-                  message: `Bạn có chắc chắn muốn xóa vĩnh viễn ${selected.length} học sinh ra khỏi hệ thống?\n(Dữ liệu điểm danh cũng sẽ bị ảnh hưởng)`,
-                  onConfirm: () => { bulkDeleteMut.mutate(selected); setConfirmDialog(null); }
+                  message: `Bạn có chắc chắn muốn xóa hồ sơ của ${selected.length} học sinh ra khỏi hệ thống?\n(Dữ liệu điểm danh cũng sẽ bị ảnh hưởng)`,
+                  showArchiveOption: true,
+                  onConfirm: (archive: boolean) => { bulkDeleteMut.mutate({ ids: selected, archive }); setConfirmDialog(null); }
                 });
               }}
               disabled={bulkDeleteMut.isPending}
@@ -191,11 +242,64 @@ const StudentsPanel = () => {
               Nhập Excel/CSV
               <input type="file" hidden accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" onChange={handleFileUpload} />
             </Button>
-            <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', lg: 'block' } }}>Tên cột: mssv, name, email</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', lg: 'block' } }}>Tên cột: mssv, name, email, phone</Typography>
           </Box>
+
+          <ToggleButtonGroup
+            value={viewMode}
+            exclusive
+            onChange={(_, val) => val && setViewMode(val)}
+            size="small"
+            sx={{ bgcolor: 'rgba(255,255,255,0.05)' }}
+          >
+            <ToggleButton value="table" title="Dạng bảng"><ViewListIcon fontSize="small" /></ToggleButton>
+            <ToggleButton value="grid" title="Dạng lưới"><GridViewIcon fontSize="small" /></ToggleButton>
+          </ToggleButtonGroup>
+
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => setAddDialog(true)}>Thêm HS</Button>
         </Box>
       </Box>
+
+      {/* Global Selection & Action Bar (Grid View Only) */}
+      {viewMode === 'grid' && (
+        <Box sx={{ 
+          mb: 2, p: 1.5, 
+          bgcolor: 'rgba(168, 85, 247, 0.05)', 
+          borderRadius: 3, 
+          border: '1px solid rgba(168, 85, 247, 0.1)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Checkbox 
+              indeterminate={selected.length > 0 && selected.length < filteredStudents.length}
+              checked={filteredStudents.length > 0 && selected.length === filteredStudents.length}
+              onChange={handleSelectAll}
+            />
+            <Typography variant="subtitle2" fontWeight="bold">
+              {selected.length > 0 ? `Đã chọn ${selected.length} học sinh` : 'Chọn tất cả (theo bộ lọc)'}
+            </Typography>
+          </Box>
+          {selected.length > 0 && (
+            <Button 
+              size="small" 
+              color="error" 
+              startIcon={<DeleteIcon />} 
+              onClick={() => {
+                setConfirmDialog({
+                  title: 'Xóa hàng loạt',
+                  message: `Bạn có chắc chắn muốn xóa hồ sơ của ${selected.length} học sinh ra khỏi hệ thống?\n(Dữ liệu điểm danh cũng sẽ bị ảnh hưởng)`,
+                  showArchiveOption: true,
+                  onConfirm: (archive: boolean) => { bulkDeleteMut.mutate({ ids: selected, archive }); setConfirmDialog(null); }
+                });
+              }}
+            >
+              Xóa vĩnh viễn ({selected.length})
+            </Button>
+          )}
+        </Box>
+      )}
 
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
 
@@ -205,11 +309,6 @@ const StudentsPanel = () => {
           <Typography color="text.secondary">Chưa có học sinh nào</Typography>
         </Paper>
       ) : (() => {
-        const filteredStudents = students.filter((s: any) => 
-          s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-          s.student_code.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-
         if (filteredStudents.length === 0) {
            return (
              <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}>
@@ -218,76 +317,242 @@ const StudentsPanel = () => {
            );
         }
 
+        if (viewMode === 'table') {
+          return (
+          <TableContainer component={Paper} sx={{ 
+            borderRadius: 3, 
+            maxHeight: 'calc(100vh - 160px)', 
+            overflowY: 'overlay',
+            pr: 0,
+            '&::-webkit-scrollbar': { width: '8px' },
+            '&::-webkit-scrollbar-track': { background: 'transparent' },
+            '&::-webkit-scrollbar-thumb': { 
+              background: 'linear-gradient(to bottom, #a855f7, #ec4899)', 
+              borderRadius: '10px',
+            },
+            '&::-webkit-scrollbar-thumb:hover': { 
+              background: 'linear-gradient(to bottom, #c084fc, #f472b6)', 
+            },
+            '&::-webkit-scrollbar-button:vertical:start:increment': { display: 'block', height: '16px' },
+            '&::-webkit-scrollbar-button:vertical:end:increment': { display: 'block', height: '16px' }
+          }}>
+            <Table stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      indeterminate={selected.length > 0 && selected.length < students.length}
+                      checked={students.length > 0 && selected.length === students.length}
+                      onChange={handleSelectAll}
+                    />
+                  </TableCell>
+                  <TableCell>Ảnh</TableCell>
+                  <TableCell>Mã SV</TableCell>
+                  <TableCell>Họ tên</TableCell>
+                  <TableCell>Email</TableCell>
+                  <TableCell>SĐT</TableCell>
+                  <TableCell align="center">Khuôn mặt</TableCell>
+                  <TableCell align="center">Thao tác</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {filteredStudents.map((s: any) => {
+                  const isSelected = selected.includes(s.id);
+                  return (
+                    <TableRow key={s.id} hover selected={isSelected} sx={{ cursor: 'pointer' }} onClick={() => handleSelectOne({ target: { checked: !isSelected } } as any, s.id)}>
+                      <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox checked={isSelected} onChange={(e) => handleSelectOne(e, s.id)} />
+                      </TableCell>
+                      <TableCell>
+                        <Avatar src={s.photo_url || undefined} sx={{ bgcolor: 'primary.dark' }}>
+                          {s.name[0]}
+                        </Avatar>
+                      </TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace' }}>{s.student_code}</TableCell>
+                      <TableCell sx={{ fontWeight: 500 }}>{s.name}</TableCell>
+                      <TableCell>{s.email || '—'}</TableCell>
+                      <TableCell>{s.phone || '—'}</TableCell>
+                      <TableCell align="center" onClick={(e) => e.stopPropagation()}>
+                        {s.face_descriptor ? (
+                          <Chip label="Đã đăng ký" color="success" size="small" variant="outlined" />
+                        ) : (
+                          <Button size="small" startIcon={<CameraAltIcon />} onClick={() => setFaceDialog(s)} color="warning">
+                            Đăng ký
+                          </Button>
+                        )}
+                      </TableCell>
+                      <TableCell align="center" onClick={(e) => e.stopPropagation()}>
+                        <IconButton size="small" title="Chỉnh sửa" onClick={() => {
+                           setEditStudent(s);
+                           form.reset({ name: s.name, student_code: s.student_code, email: s.email || '', phone: s.phone || '' });
+                           setAddDialog(true);
+                        }} sx={{ color: 'primary.main', mr: 1 }}>
+                          <EditIcon />
+                        </IconButton>
+                         <IconButton size="small" title="Xoá" onClick={() => {
+                            setConfirmDialog({
+                              title: 'Xóa học sinh',
+                              message: `Bạn có chắc chắn muốn xóa hồ sơ của học sinh ${s.name}?`,
+                              showArchiveOption: true,
+                              onConfirm: (archive: boolean) => { deleteStudentMut.mutate({ id: s.id, archive }); setConfirmDialog(null); }
+                            });
+                         }} sx={{ color: 'error.main' }}>
+                           <DeleteIcon />
+                         </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          );
+        }
+
+        // GRID VIEW
         return (
-        <TableContainer component={Paper} sx={{ borderRadius: 3 }}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell padding="checkbox">
-                  <Checkbox
-                    indeterminate={selected.length > 0 && selected.length < students.length}
-                    checked={students.length > 0 && selected.length === students.length}
-                    onChange={handleSelectAll}
-                  />
-                </TableCell>
-                <TableCell>Ảnh</TableCell>
-                <TableCell>Mã SV</TableCell>
-                <TableCell>Họ tên</TableCell>
-                <TableCell>Email</TableCell>
-                <TableCell align="center">Khuôn mặt</TableCell>
-                <TableCell align="center">Xoá</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredStudents.map((s: any) => {
-                const isSelected = selected.includes(s.id);
-                return (
-                  <TableRow key={s.id} hover selected={isSelected} sx={{ cursor: 'pointer' }} onClick={() => handleSelectOne({ target: { checked: !isSelected } } as any, s.id)}>
-                    <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
-                      <Checkbox checked={isSelected} onChange={(e) => handleSelectOne(e, s.id)} />
-                    </TableCell>
-                    <TableCell>
-                      <Avatar src={s.photo_url || undefined} sx={{ bgcolor: 'primary.dark' }}>
-                        {s.name[0]}
-                      </Avatar>
-                    </TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace' }}>{s.student_code}</TableCell>
-                    <TableCell sx={{ fontWeight: 500 }}>{s.name}</TableCell>
-                    <TableCell>{s.email || '—'}</TableCell>
-                    <TableCell align="center" onClick={(e) => e.stopPropagation()}>
-                      {s.face_descriptor ? (
-                        <Chip label="Đã đăng ký" color="success" size="small" variant="outlined" />
-                      ) : (
-                        <Button size="small" startIcon={<CameraAltIcon />} onClick={() => setFaceDialog(s)} color="warning">
-                          Đăng ký
-                        </Button>
+          <Box sx={{ 
+            display: 'grid', 
+            gridTemplateColumns: {
+              xs: '1fr',
+              sm: 'repeat(auto-fill, minmax(300px, 1fr))',
+              md: 'repeat(auto-fill, minmax(320px, 1fr))',
+            },
+            gap: 3,
+            maxHeight: 'calc(100vh - 160px)',
+            overflowY: 'overlay',
+            p: 1,
+            pr: 1.5,
+            '&::-webkit-scrollbar': { width: '8px' },
+            '&::-webkit-scrollbar-track': { background: 'transparent' },
+            '&::-webkit-scrollbar-thumb': { 
+              background: 'linear-gradient(to bottom, #a855f7, #ec4899)', 
+              borderRadius: '10px',
+            },
+            '&::-webkit-scrollbar-thumb:hover': { 
+              background: 'linear-gradient(to bottom, #c084fc, #f472b6)', 
+            },
+            '&::-webkit-scrollbar-button:vertical:start:increment': { display: 'block', height: '16px' },
+            '&::-webkit-scrollbar-button:vertical:end:increment': { display: 'block', height: '16px' }
+          }}>
+            {filteredStudents.map((s: any) => (
+              <Box key={s.id}>
+                <Card sx={{ 
+                  borderRadius: 4, 
+                  height: '100%', 
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  position: 'relative',
+                  transition: 'transform 0.2s, box-shadow 0.2s',
+                  '&:hover': { transform: 'translateY(-4px)', boxShadow: 10 }
+                }}>
+                  <Box sx={{ p: 2, pb: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <Checkbox 
+                      size="small" 
+                      checked={selected.includes(s.id)} 
+                      onChange={(e) => handleSelectOne(e, s.id)}
+                    />
+                    <IconButton size="small" onClick={(e) => handleMenuOpen(e, s.id)}>
+                      <MoreVertIcon />
+                    </IconButton>
+                  </Box>
+                  
+                  <CardContent sx={{ pt: 1, flexGrow: 1, textAlign: 'center' }}>
+                    <Avatar 
+                      src={s.photo_url || undefined} 
+                      sx={{ width: 80, height: 80, mx: 'auto', mb: 2, bgcolor: 'primary.main', fontSize: '2rem' }}
+                    >
+                      {s.name[0]}
+                    </Avatar>
+                    <Typography variant="h6" fontWeight="bold" noWrap>{s.name}</Typography>
+                    <Typography variant="body2" color="text.secondary" fontFamily="monospace" gutterBottom>
+                      {s.student_code}
+                    </Typography>
+                    
+                    <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center' }}>
+                      {s.email && (
+                        <Tooltip title={s.email}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, maxWidth: '100%' }}>
+                            <MailOutlineIcon fontSize="inherit" color="disabled" />
+                            <Typography variant="caption" noWrap>{s.email}</Typography>
+                          </Box>
+                        </Tooltip>
                       )}
-                    </TableCell>
-                    <TableCell align="center" onClick={(e) => e.stopPropagation()}>
-                      <IconButton size="small" onClick={() => {
-                         setEditStudent(s);
-                         form.reset({ name: s.name, student_code: s.student_code, email: s.email || '' });
-                         setAddDialog(true);
-                      }} sx={{ color: 'primary.main', mr: 1 }}>
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton size="small" onClick={() => {
-                         setConfirmDialog({
-                           title: 'Xóa học sinh',
-                           message: `Bạn có chắc chắn muốn xóa hồ sơ của học sinh ${s.name}?`,
-                           onConfirm: () => { deleteStudentMut.mutate(s.id); setConfirmDialog(null); }
-                         });
-                      }} sx={{ color: 'error.main' }}>
-                        <DeleteIcon />
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )
+                      {s.phone && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <PhoneIphoneIcon fontSize="inherit" color="disabled" />
+                          <Typography variant="caption">{s.phone}</Typography>
+                        </Box>
+                      )}
+                    </Box>
+
+                    <Box sx={{ mt: 2 }}>
+                      {s.face_descriptor ? (
+                         <Chip 
+                           label="Đã đăng ký" 
+                           color="success" 
+                           size="small" 
+                           sx={{ 
+                             bgcolor: 'rgba(34,197,94,0.1)', 
+                             borderColor: 'rgba(34,197,94,0.2)',
+                             fontWeight: 'bold',
+                             border: '1px solid'
+                           }} 
+                         />
+                      ) : (
+                         <Chip 
+                           label="Thiếu khuôn mặt" 
+                           color="warning" 
+                           size="small" 
+                           variant="outlined" 
+                           sx={{ borderStyle: 'dashed' }}
+                         />
+                      )}
+                    </Box>
+                  </CardContent>
+
+                  <CardActions sx={{ p: 2, pt: 0, justifyContent: 'center' }}>
+                    {!s.face_descriptor ? (
+                      <Button fullWidth variant="outlined" size="small" startIcon={<CameraAltIcon />} onClick={() => setFaceDialog(s)} color="warning">
+                        Đăng ký ngay
+                      </Button>
+                    ) : (
+                      <Button fullWidth variant="text" size="small" disabled sx={{ opacity: 0.5 }}>
+                        Đã đăng ký
+                      </Button>
+                    )}
+                  </CardActions>
+
+                  <Menu
+                    anchorEl={anchorEl[s.id]}
+                    open={Boolean(anchorEl[s.id])}
+                    onClose={() => handleMenuClose(s.id)}
+                  >
+                    <MenuItem onClick={() => {
+                      handleMenuClose(s.id);
+                      setEditStudent(s);
+                      form.reset({ name: s.name, student_code: s.student_code, email: s.email || '', phone: s.phone || '' });
+                      setAddDialog(true);
+                    }}>
+                      <EditIcon fontSize="small" sx={{ mr: 1, color: 'primary.main' }} /> Chỉnh sửa
+                    </MenuItem>
+                    <MenuItem onClick={() => {
+                      handleMenuClose(s.id);
+                      setConfirmDialog({
+                        title: 'Xóa học sinh',
+                        message: `Bạn có chắc chắn muốn xóa hồ sơ của học sinh ${s.name}?`,
+                        showArchiveOption: true,
+                        onConfirm: (archive: boolean) => { deleteStudentMut.mutate({ id: s.id, archive }); setConfirmDialog(null); }
+                      });
+                    }}>
+                      <DeleteIcon fontSize="small" sx={{ mr: 1, color: 'error.main' }} /> Xóa hồ sơ
+                    </MenuItem>
+                  </Menu>
+                </Card>
+              </Box>
+            ))}
+          </Box>
+        );
       })()}
 
       <Dialog open={addDialog} onClose={closeDialog} maxWidth="sm" fullWidth>
@@ -307,7 +572,10 @@ const StudentsPanel = () => {
               <TextField {...field} label="Mã sinh viên" fullWidth error={!!form.formState.errors.student_code} helperText={form.formState.errors.student_code?.message} />
             )} />
             <Controller name="email" control={form.control} render={({ field }) => (
-              <TextField {...field} label="Email (tuỳ chọn)" fullWidth />
+              <TextField {...field} label="Email (tuỳ chọn)" fullWidth error={!!form.formState.errors.email} helperText={form.formState.errors.email?.message} />
+            )} />
+            <Controller name="phone" control={form.control} render={({ field }) => (
+              <TextField {...field} label="Số điện thoại (tuỳ chọn)" fullWidth error={!!form.formState.errors.phone} helperText={form.formState.errors.phone?.message} />
             )} />
           </DialogContent>
           <DialogActions>
@@ -331,16 +599,16 @@ const StudentsPanel = () => {
       {confirmDialog && (
         <ConfirmDialog
           open={true}
-          title={confirmDialog.title}
-          message={confirmDialog.message}
-          onConfirm={confirmDialog.onConfirm}
-          onCancel={() => setConfirmDialog(null)}
-          isPending={deleteStudentMut.isPending || bulkDeleteMut.isPending}
-        />
-      )}
+           title={confirmDialog.title}
+           message={confirmDialog.message}
+           showArchiveOption={confirmDialog.showArchiveOption}
+           onConfirm={confirmDialog.onConfirm}
+           onCancel={() => setConfirmDialog(null)}
+           isPending={deleteStudentMut.isPending || bulkDeleteMut.isPending}
+         />
+       )}
     </Box>
   );
 };
-
 
 export default StudentsPanel;

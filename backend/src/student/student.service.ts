@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Student } from './entities/student.entity';
 import { MinioService } from '../minio/minio.service';
 import { AiService } from '../ai/ai.service';
@@ -33,83 +33,131 @@ export class StudentService {
     });
   }
 
-  create(data: { name: string; student_code: string; email?: string; teacher_id?: string }) {
-    data.student_code = data.student_code.replace(/\s+/g, '');
+  create(data: { name: string; student_code: string; email?: string; phone?: string; teacher_id?: string }) {
+    data.student_code = data.student_code.replace(/\s+/g, '').toUpperCase();
     data.name = data.name.trim();
     if (data.email) data.email = data.email.trim();
+    if (data.phone) data.phone = data.phone.trim();
     const student = this.studentRepo.create(data);
     return this.studentRepo.save(student);
   }
 
-  async createBulk(students: Array<{ name: string; student_code: string; email?: string; teacher_id?: string }>) {
+  async createBulk(students: Array<{ name: string; student_code: string; email?: string; phone?: string; teacher_id?: string }>) {
     const results: Student[] = [];
-    for (const data of students) {
-      // 1. Sanitize and Extract
-      let student_code = String(data.student_code || '').toString().trim().replace(/\s+/g, '');
-      const name = String(data.name || '').trim();
-      const email = data.email ? String(data.email).trim() : null;
-      const teacher_id = data.teacher_id;
+    
+    // 1. Pre-sanitize and deduplicate by student_code
+    const rawSanitized = students.map(s => ({
+      name: String(s.name || '').trim(),
+      student_code: String(s.student_code || '').trim().replace(/\s+/g, '').toUpperCase(),
+      email: s.email ? String(s.email).trim() : null,
+      phone: s.phone ? String(s.phone).trim() : null,
+      teacher_id: s.teacher_id
+    })).filter(s => s.student_code && s.name);
 
-      if (!student_code || !name) continue;
+    if (rawSanitized.length === 0) return [];
 
-      // Ensure student_code is consistent (e.g., uppercase if that's the convention, but let's keep it as is for now)
-      // but remove any non-printable characters or whitespace.
-      
-      let student = await this.studentRepo.findOne({ where: { student_code } });
+    // Deduplicate internally (keep first occurrence)
+    const uniqueMap = new Map();
+    rawSanitized.forEach(s => {
+      if (!uniqueMap.has(s.student_code)) uniqueMap.set(s.student_code, s);
+    });
+    const sanitizedStudents = Array.from(uniqueMap.values());
+    const studentCodes = sanitizedStudents.map(s => s.student_code);
+
+    // 2. Fetch all existing students in one go
+    const existingStudents = await this.studentRepo.find({
+      where: { student_code: In(studentCodes) }
+    });
+    
+    const studentMap = new Map(existingStudents.map(s => [s.student_code, s]));
+    const toSave: Student[] = [];
+
+    for (const data of sanitizedStudents) {
+      let student = studentMap.get(data.student_code);
       
       if (!student) {
-        // Create new student with explicit fields
-        student = this.studentRepo.create({
-          name,
-          student_code,
-          email: email as any,
-          teacher_id
+        const newStudent = this.studentRepo.create({
+          name: data.name,
+          student_code: data.student_code,
+          email: data.email,
+          phone: data.phone,
+          teacher_id: data.teacher_id
         });
-        student = await this.studentRepo.save(student);
+        toSave.push(newStudent);
       } else {
-        // Update existing student
         let updated = false;
-        if (student.name !== name) {
-          student.name = name;
+        if (data.name && student.name !== data.name) {
+          student.name = data.name;
           updated = true;
         }
-        // Only update email if provided and different
-        if (email && student.email !== email) {
-          student.email = email;
+        if (data.email && student.email !== data.email) {
+          student.email = data.email;
           updated = true;
         }
-        if (updated) {
-          student = await this.studentRepo.save(student);
+        if (data.phone && student.phone !== data.phone) {
+          student.phone = data.phone;
+          updated = true;
         }
+        if (updated) toSave.push(student);
+        else results.push(student);
       }
-      results.push(student);
     }
+
+    if (toSave.length > 0) {
+      const saved = await this.studentRepo.save(toSave);
+      results.push(...saved);
+    }
+
     return results;
   }
 
-  async update(id: string, data: { name?: string; student_code?: string; email?: string }, teacherId: string) {
+  async update(id: string, data: { name?: string; student_code?: string; email?: string; phone?: string }, teacherId: string) {
     const student = await this.findOne(id, teacherId);
     if (!student) throw new NotFoundException('Student not found or unauthorized');
     
-    if (data.student_code) data.student_code = data.student_code.replace(/\s+/g, '');
+    if (data.student_code) data.student_code = data.student_code.replace(/\s+/g, '').toUpperCase();
     if (data.name) data.name = data.name.trim();
     if (data.email) data.email = data.email.trim();
+    if (data.phone) data.phone = data.phone.trim();
 
     Object.assign(student, data);
     return this.studentRepo.save(student);
   }
 
-  async remove(id: string, teacherId: string) {
+  async remove(id: string, teacherId: string, archive: boolean = true) {
     const student = await this.findOne(id, teacherId);
     if (!student) throw new NotFoundException('Student not found or unauthorized');
     
-    // We intentionally DO NOT delete from MinIO here because the 
-    // user explicitly requested to retain the image data for AI research
-    // and manual dataset curation later.
+    // Handle photo archiving or deletion
+    if (student.photo_url) {
+      try {
+        const bucketMatch = student.photo_url.match(/\:9000\/([^\/]+)\//);
+        const sourceBucket = bucketMatch ? bucketMatch[1] : this.minioService.buckets.register;
+        const fullKey = student.photo_url.split(`/${sourceBucket}/`)[1];
+        
+        if (fullKey) {
+          if (archive) {
+            // Move from current bucket to deleted bucket
+            await this.minioService.moveFile(
+                fullKey, 
+                fullKey, 
+                sourceBucket, 
+                this.minioService.buckets.deleted
+            );
+          } else {
+            // Delete permanently from current bucket
+            await this.minioService.deleteFile(fullKey, sourceBucket);
+          }
+        }
+      } catch (e) {
+        // Handled silently
 
-    // However, we MUST remove them from the AI fast-matching memory to prevent
+      }
+    }
+
+    // We MUST remove them from the AI fast-matching memory to prevent
     // ghost attendances:
-    await this.aiService.deleteFace(id).catch(console.error);
+    await this.aiService.deleteFace(id).catch(() => {});
 
     return this.studentRepo.remove(student);
   }
@@ -120,7 +168,12 @@ export class StudentService {
 
     try {
       const fileName = `student-${id}-${Date.now()}.jpg`;
-      const photoUrl = await this.minioService.uploadFile(file.buffer, fileName, file.mimetype);
+      const photoUrl = await this.minioService.uploadFile(
+        file.buffer, 
+        fileName, 
+        file.mimetype, 
+        this.minioService.buckets.register
+      );
 
       const aiResponse = await this.aiService.registerFace(id, file.buffer, file.originalname);
       // Retrieve descriptor if available in the parsed aiResponse

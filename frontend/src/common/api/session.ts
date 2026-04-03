@@ -17,8 +17,8 @@ export const createSession = async (payload: CreateSessionPayload): Promise<Sess
   return response.data;
 };
 
-export const deleteSession = async (id: string): Promise<SessionData> => {
-  const response = await http.delete(`/sessions/${id}`);
+export const deleteSession = async (id: string, archive: boolean = true): Promise<SessionData> => {
+  const response = await http.delete(`/sessions/${id}`, { data: { archive } });
   return response.data;
 };
 
