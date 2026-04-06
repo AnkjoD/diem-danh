@@ -1,0 +1,25 @@
+# AI Models & Data
+*.onnx
+*.bin
+ai/models/
+ai/databases/
+
+# Directories
+node_modules/
+.next/
+dist/
+build/
+.venv/
+__pycache__/
+
+# Docker / DB Volumes
+postgres_data/
+minio_data/
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
