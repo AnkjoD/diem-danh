@@ -52,15 +52,19 @@ python scripts/download_models.py
 ```
 *Lưu ý: Bạn cần cài đặt Python và thư viện `requests` để chạy script này.*
 
-Khởi chạy Docker:
-```bash
-docker-compose up -d --build
-```
+### 🚀 Cách khởi chạy nhanh (Cho người dùng)
+Nếu bạn đã cài đặt Docker, chỉ cần chạy file script:
+1.  **Chạy `start-homura.bat`**: Script sẽ tự động kiểm tra Docker, khởi động các dịch vụ và mở trình duyệt cho bạn.
+2.  **Chọn [B]**: Để đảm bảo các cập nhật mới nhất (như phần Import Excel vừa sửa) được áp dụng, hãy chọn phím `B` khi được hỏi.
 
-### ⚡ Dành cho người dùng không chuyên (Windows)
-Nếu bạn không muốn gõ lệnh, hãy sử dụng các file script có sẵn:
-1. **`start-homura.bat`**: Chạy ngay lập tức hệ thống (mất < 1s nếu đã build).
-2. **`update-homura.bat`**: Tự động tải code mới và build lại toàn bộ hệ thống (Dùng khi có cập nhật tính năng mới).
+### 🐳 Triển khai với Docker (Dành cho Dev)
+```bash
+# Khởi động toàn bộ hệ thống (Dev mode)
+docker-compose up -d
+
+# Build lại và khởi động (Production mode)
+docker-compose -f docker-compose.prod.yml up --build -d
+```
 
 ### 3. Truy cập ứng dụng
 - **Frontend**: [http://localhost:3000](http://localhost:3000)

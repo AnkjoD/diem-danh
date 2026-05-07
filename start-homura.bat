@@ -20,13 +20,25 @@ if %errorlevel% neq 0 (
 echo OK! Docker dang hoat dong.
 echo.
 
-echo [2] Dang khoi dong he thong (Voi phien ban da Build truoc do)...
-echo Neu ban vua sua code va muon cap nhat, hay go lenh: docker-compose -f docker-compose.prod.yml up --build -d
-docker-compose -f docker-compose.prod.yml up -d
+echo [2] Lua chon khoi dong:
+echo    [A] Khoi dong nhanh (Dung ban Build cu)
+echo    [B] Cap nhat & Khoi dong (Rebuild - Khuyen nghi sau khi sua code)
 echo.
+set /p choice="Nhap lua chon (A/B, mac dinh A): "
 
-echo [3] Dang doi he thong san sang (Khoang 10 giay)...
-timeout /t 10 /nobreak >nul
+if /i "%choice%"=="B" (
+    echo.
+    echo Dang tai lai ma nguon va Build lai Docker...
+    docker-compose -f docker-compose.prod.yml up --build -d
+) else (
+    echo.
+    echo Dang khoi dong nhanh he thong...
+    docker-compose -f docker-compose.prod.yml up -d
+)
+
+echo.
+echo [3] Dang doi he thong san sang (Khoang 15 giay)...
+timeout /t 15 /nobreak >nul
 echo.
 
 echo [4] Mo trinh duyet truy cap trang danh cho Giao vien...
@@ -36,6 +48,6 @@ echo.
 echo =======================================================
 echo HE THONG DA HOAT DONG! 
 echo Ban co the tat cua so nay. 
-echo De tat toan bo he thong, gõ lenh: docker-compose down
+echo De tat toan bo he thong, go lenh: docker-compose down
 echo =======================================================
 pause
