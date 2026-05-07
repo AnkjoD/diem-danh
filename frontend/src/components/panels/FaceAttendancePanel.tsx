@@ -114,6 +114,9 @@ const FaceAttendancePanel = () => {
   } | null>(null);
   const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<string[]>([]);
+  const [processingIndex, setProcessingIndex] = useState<number>(-1);
+  const [totalFiles, setTotalFiles] = useState<number>(0);
+  const [accumulatedStudents, setAccumulatedStudents] = useState<any[]>([]);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"table" | "grid">("table");
   const [overrideMenu, setOverrideMenu] = useState<{
@@ -274,6 +277,7 @@ const FaceAttendancePanel = () => {
         type: "error",
         message: err.message || "Không thể kết nối đến AI Service",
       });
+      setProcessingIndex(-1); // Stop on error
     },
   });
 
@@ -692,7 +696,61 @@ const FaceAttendancePanel = () => {
 
     setResultDialog(true);
     setScanResult(null);
-    recognizeMut.mutate({ files: filesToUpload, sId: currentSessionId });
+    setAccumulatedStudents([]);
+    setTotalFiles(filesToUpload.length);
+    
+    // Bắt đầu xử lý ảnh đầu tiên trong hàng đợi
+    setProcessingIndex(0);
+    processQueueItem(0, currentSessionId, filesToUpload);
+  };
+
+  const processQueueItem = async (index: number, sId: string, files: File[]) => {
+    if (index >= files.length) {
+      setProcessingIndex(-1); // Hoàn thành tất cả
+      setFilesToUpload([]);
+      setFilePreviews([]);
+      return;
+    }
+
+    setProcessingIndex(index);
+    
+    try {
+      const res = await recognizeAttendanceFace(sId, [files[index]]);
+      
+      if (res.success && res.students) {
+        // Cập nhật danh sách học sinh tích lũy
+        setAccumulatedStudents(prev => {
+          const newOnes = res.students.filter(s => !prev.find(p => p.id === s.id));
+          const updatedList = [...prev, ...newOnes];
+          
+          // Cập nhật UI tích điểm danh ngay lập tức
+          const newStatusMap = new Map(recognized);
+          updatedList.forEach((s) => {
+            newStatusMap.set(s.id, "present");
+          });
+          setRecognized(newStatusMap);
+          
+          setScanResult({ type: "success", students: updatedList });
+          return updatedList;
+        });
+
+        queryClient.invalidateQueries({
+          queryKey: ["today_session", selectedClass],
+        });
+      }
+      
+      // Chuyển sang ảnh tiếp theo sau một khoảng nghỉ ngắn để UI kịp cập nhật
+      setTimeout(() => {
+        processQueueItem(index + 1, sId, files);
+      }, 300);
+
+    } catch (err: any) {
+      setScanResult({
+        type: "error",
+        message: `Lỗi tại ảnh ${index + 1}: ` + (err.message || "Không thể kết nối đến AI Service"),
+      });
+      setProcessingIndex(-1);
+    }
   };
 
   const scanFrame = async () => {
@@ -1914,7 +1972,7 @@ const FaceAttendancePanel = () => {
       <Dialog
         open={resultDialog}
         onClose={() => {
-          if (!recognizeMut.isPending) setResultDialog(false);
+          if (!recognizeMut.isPending && processingIndex === -1) setResultDialog(false);
         }}
         maxWidth="sm"
         fullWidth
@@ -1935,7 +1993,36 @@ const FaceAttendancePanel = () => {
           {scanResult?.type === "success" ? "Thông Tin Điểm Danh" : "Thông Báo"}
         </DialogTitle>
         <DialogContent sx={{ textAlign: "center", py: 4, overflow: "hidden", px: 1 }}>
-          {recognizeMut.isPending ? (
+          {processingIndex !== -1 ? (
+            <Box sx={{ py: 3, px: 4 }}>
+              <Box sx={{ position: 'relative', display: 'inline-flex', mb: 3 }}>
+                <CircularProgress size={100} thickness={4} variant="determinate" value={((processingIndex + 1) / totalFiles) * 100} />
+                <Box
+                  sx={{
+                    top: 0, left: 0, bottom: 0, right: 0,
+                    position: 'absolute', display: 'flex',
+                    alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <Typography variant="caption" component="div" color="primary" fontWeight="bold">
+                    {Math.round(((processingIndex + 1) / totalFiles) * 100)}%
+                  </Typography>
+                </Box>
+              </Box>
+              
+              <Typography variant="h6" color="primary" fontWeight="bold" gutterBottom>
+                Đang phân tích ảnh {processingIndex + 1}/{totalFiles}
+              </Typography>
+              <LinearProgress 
+                variant="determinate" 
+                value={((processingIndex + 1) / totalFiles) * 100} 
+                sx={{ height: 8, borderRadius: 5, mt: 2, bgcolor: 'rgba(255,255,255,0.1)' }}
+              />
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                Đã tìm thấy <strong>{accumulatedStudents.length}</strong> học sinh...
+              </Typography>
+            </Box>
+          ) : recognizeMut.isPending ? (
             <Box
               sx={{
                 display: "flex",
@@ -1965,7 +2052,7 @@ const FaceAttendancePanel = () => {
                   Điểm danh thành công!
                 </Typography>
                 <Typography variant="subtitle1" color="text.secondary">
-                  Đã nhận diện được {scanResult.students.length} học sinh
+                  Tổng cộng đã nhận diện được {scanResult.students.length} học sinh
                 </Typography>
 
                 {/* HIỂN THỊ ẢNH QUÉT VỚI Ô VUÔNG VẼ BẰNG SVG (Tiết kiệm bộ nhớ MinIO) */}
@@ -2124,10 +2211,10 @@ const FaceAttendancePanel = () => {
             variant="contained"
             size="large"
             onClick={() => setResultDialog(false)}
-            disabled={recognizeMut.isPending}
+            disabled={recognizeMut.isPending || processingIndex !== -1}
             sx={{ minWidth: 240, borderRadius: 8, py: 1.5, fontSize: "1.1rem" }}
           >
-            Đóng / Tiếp Tục (Enter)
+            {processingIndex !== -1 ? "Đang xử lý..." : "Đóng / Tiếp Tục (Enter)"}
           </Button>
         </DialogActions>
       </Dialog>
