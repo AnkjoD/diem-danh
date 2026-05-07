@@ -21,6 +21,7 @@ import MenuBookIcon from '@mui/icons-material/MenuBook';
 import ScienceIcon from '@mui/icons-material/Science';
 import GroupIcon from '@mui/icons-material/Group';
 import * as XLSX from 'xlsx';
+import { parseStudentFile } from '@/common/utils/excelParser';
 import { getCourses, createCourse, deleteCourse } from '@/common/api/course';
 import { getClasses, createClass, deleteClass, getAssignedStudents, assignStudent, unassignStudent, assignBulkStudents } from '@/common/api/class';
 import { getStudents } from '@/common/api/student';
@@ -161,44 +162,23 @@ const SubjectsPanel = () => {
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !assignDialog) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const bstr = evt.target?.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      const wsname = wb.SheetNames[0];
-      const ws = wb.Sheets[wsname];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
-      if (rows.length === 0) return;
-      let startIndex = 0;
-      let colMap = { code: 0, name: 1, email: 2, phone: 3 };
-      const firstRow = rows[0].map(c => String(c || '').toLowerCase().trim());
-      const hasHeader = firstRow.some(c => ['mssv', 'mã sv', 'mã số', 'họ tên', 'tên', 'email', 'sđt', 'phone'].includes(c));
-      if (hasHeader) {
-        startIndex = 1;
-        colMap.code = firstRow.findIndex(c => ['mssv', 'mã sv', 'mã số', 'mã số sinh viên', 'student_code'].includes(c));
-        colMap.name = firstRow.findIndex(c => ['họ tên', 'tên', 'name', 'full name', 'full_name', 'họ và tên'].includes(c));
-        colMap.email = firstRow.findIndex(c => ['email', 'thư điện tử', 'mail'].includes(c));
-        colMap.phone = firstRow.findIndex(c => ['sđt', 'số điện thoại', 'phone', 'tel'].includes(c));
-        if (colMap.code === -1) colMap.code = 0;
-        if (colMap.name === -1) colMap.name = 1;
-        if (colMap.email === -1) colMap.email = 2;
-        if (colMap.phone === -1) colMap.phone = 3;
+
+    try {
+      const formatted = await parseStudentFile(file);
+      
+      if (formatted.length > 0) {
+        bulkAssignMut.mutate({ classId: assignDialog.classId, students: formatted });
+      } else {
+        setError('Không tìm thấy dữ liệu MSSV hợp lệ trong file');
       }
-      const formatted = rows.slice(startIndex).map((row: any[]) => ({
-        student_code: String(row[colMap.code] || '').trim(),
-        name: String(row[colMap.name] || '').trim(),
-        email: colMap.email !== -1 ? String(row[colMap.email] || '').trim() : '',
-        phone: colMap.phone !== -1 ? String(row[colMap.phone] || '').trim() : '',
-        teacher_id: user?.id,
-      })).filter(s => s.student_code); 
-      if (formatted.length > 0) bulkAssignMut.mutate({ classId: assignDialog.classId, students: formatted });
-      else setError('Không tìm thấy dữ liệu MSSV hợp lệ trong file');
-    };
-    reader.readAsBinaryString(file);
-    e.target.value = '';
+    } catch (err: any) {
+      setError(err.message || 'Lỗi khi xử lý file');
+    } finally {
+      e.target.value = '';
+    }
   };
 
   return (
@@ -365,6 +345,9 @@ const SubjectsPanel = () => {
                     {bulkAssignMut.isPending ? 'Đang tải...' : 'Nhập CSV/Excel'}
                     <input type="file" hidden accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" onChange={handleFileUpload} />
                 </Button>
+                <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                  Yêu cầu cột: MSSV, Họ Tên
+                </Typography>
                 <TextField 
                   size="small" 
                   placeholder="Tìm học sinh..." 
@@ -396,7 +379,6 @@ const SubjectsPanel = () => {
                     })()}
                 </Box>
              </Box>
-             <Typography variant="caption" color="text.secondary">Tên cột mong đợi: mã sv/mssv, họ tên/tên, email, sđt</Typography>
           </Box>
           {(allStudents as any[]).length === 0 ? (
             <EmptyState 

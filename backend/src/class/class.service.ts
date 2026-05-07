@@ -128,6 +128,7 @@ export class ClassService {
 
   async assignBulkStudents(classId: string, students: any[], teacherId: string, sync: boolean = false) {
     try {
+      console.log(`[ClassService] Bulk assigning ${students.length} students to class ${classId} (sync: ${sync})`);
       const cls = await this.findOne(classId, teacherId);
       if (!cls) throw new NotFoundException('Class not found or unauthorized');
 
@@ -135,6 +136,7 @@ export class ClassService {
       const mapped = students.map(s => ({ ...s, teacher_id: teacherId }));
       const upsertedStudents = await this.studentService.createBulk(mapped);
       
+      console.log(`[ClassService] Successfully upserted ${upsertedStudents.length} students`);
       // 2. Fetch current assignments
       const existingAssignments = await this.classStudentRepo.find({
         where: { classEntity: { id: classId } },

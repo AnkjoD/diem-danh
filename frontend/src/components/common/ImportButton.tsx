@@ -15,7 +15,7 @@ export const ImportButton: React.FC<ImportButtonProps> = ({
   onFileSelect, 
   disabled = false, 
   label = "Nhập Excel/CSV", 
-  tooltip = "Tên cột: mssv, name, email, phone",
+  tooltip = "Yêu cầu cột: MSSV (Mã SV), Họ Tên (Tên). Tùy chọn: Email, SĐT.",
   accept = ".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel",
   multiple = false,
 }) => {

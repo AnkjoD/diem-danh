@@ -17,6 +17,7 @@ import MailOutlineIcon from '@mui/icons-material/MailOutline';
 import PhoneIphoneIcon from '@mui/icons-material/PhoneIphone';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import * as XLSX from 'xlsx';
+import { parseStudentFile } from '@/common/utils/excelParser';
 import FaceRegistration from '@/components/FaceRegistration';
 import { ViewModeToggle } from '../common/ViewModeToggle';
 import { PremiumScrollContainer } from '../common/PremiumScrollContainer';
@@ -149,48 +150,25 @@ const StudentsPanel = () => {
     setAnchorEl({ ...anchorEl, [id]: null });
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const bstr = evt.target?.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      const wsname = wb.SheetNames[0];
-      const ws = wb.Sheets[wsname];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
-      if (rows.length === 0) return;
 
-      let startIndex = 0;
-      let colMap = { code: 0, name: 1, email: 2, phone: 3 };
-      const firstRow = rows[0].map(c => String(c || '').toLowerCase().trim());
-      const hasHeader = firstRow.some(c => ['mssv', 'mã sv', 'mã số', 'họ tên', 'tên', 'email', 'sđt', 'phone'].includes(c));
-
-      if (hasHeader) {
-        startIndex = 1;
-        colMap.code = firstRow.findIndex(c => ['mssv', 'mã sv', 'mã số', 'mã số sinh viên', 'student_code'].includes(c));
-        colMap.name = firstRow.findIndex(c => ['họ tên', 'tên', 'name', 'full name'].includes(c));
-        colMap.email = firstRow.findIndex(c => ['email', 'thư điện tử', 'mail'].includes(c));
-        colMap.phone = firstRow.findIndex(c => ['sđt', 'số điện thoại', 'phone', 'tel'].includes(c));
-        if (colMap.code === -1) colMap.code = 0;
-        if (colMap.name === -1) colMap.name = 1;
-        if (colMap.email === -1) colMap.email = 2;
-        if (colMap.phone === -1) colMap.phone = 3;
-      }
-
-      const formatted = rows.slice(startIndex).map((row: any[]) => ({
-        student_code: String(row[colMap.code] || '').trim(),
-        name: String(row[colMap.name] || '').trim(),
-        email: colMap.email !== -1 ? String(row[colMap.email] || '').trim() : '',
-        phone: colMap.phone !== -1 ? String(row[colMap.phone] || '').trim() : '',
-        teacher_id: user?.id,
-      })).filter(s => s.student_code && (startIndex === 0 || s.name));
+    try {
+      const formatted = await parseStudentFile(file);
       
-      if (formatted.length > 0) bulkCreateMut.mutate(formatted);
-      else setError('Không tìm thấy dữ liệu hợp lệ trong file');
-    };
-    reader.readAsBinaryString(file);
-    e.target.value = '';
+      if (formatted.length > 0) {
+        // Gán teacher_id cho từng sinh viên
+        const payload = formatted.map(s => ({ ...s, teacher_id: user?.id }));
+        bulkCreateMut.mutate(payload);
+      } else {
+        setError('Không tìm thấy dữ liệu hợp lệ trong file. Vui lòng kiểm tra lại các cột.');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Lỗi khi xử lý file');
+    } finally {
+      e.target.value = '';
+    }
   };
 
   return (
@@ -227,10 +205,15 @@ const StudentsPanel = () => {
               </Button>
             )}
             
-            <ImportButton 
-              onFileSelect={handleFileUpload} 
-              disabled={bulkCreateMut.isPending} 
-            />
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <ImportButton 
+                onFileSelect={handleFileUpload} 
+                disabled={bulkCreateMut.isPending} 
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, fontSize: '0.65rem' }}>
+                Cột yêu cầu: MSSV, Họ Tên
+              </Typography>
+            </Box>
 
             <ViewModeToggle 
               value={viewMode} 
