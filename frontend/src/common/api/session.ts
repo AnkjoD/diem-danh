@@ -8,7 +8,7 @@ export const getSessions = async (classId?: string): Promise<SessionData[]> => {
 };
 
 export const getTodaySession = async (classId: string): Promise<SessionData | null> => {
-  const response = await http.get(`/sessions/today/${classId}`);
+  const response = await http.get(`/sessions/today/${classId}?t=${Date.now()}`);
   return response.data;
 };
 

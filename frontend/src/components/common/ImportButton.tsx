@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Button, Tooltip } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 
@@ -8,6 +8,7 @@ interface ImportButtonProps {
   label?: string;
   tooltip?: string;
   accept?: string;
+  multiple?: boolean;
 }
 
 export const ImportButton: React.FC<ImportButtonProps> = ({ 
@@ -15,8 +16,17 @@ export const ImportButton: React.FC<ImportButtonProps> = ({
   disabled = false, 
   label = "Nhập Excel/CSV", 
   tooltip = "Tên cột: mssv, name, email, phone",
-  accept = ".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+  accept = ".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel",
+  multiple = false,
 }) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onFileSelect(e);
+    // Reset input để có thể chọn lại cùng file
+    if (inputRef.current) inputRef.current.value = '';
+  };
+
   return (
     <Tooltip title={tooltip} arrow placement="top">
       <Button 
@@ -28,10 +38,12 @@ export const ImportButton: React.FC<ImportButtonProps> = ({
       >
         {label}
         <input 
+          ref={inputRef}
           type="file" 
           hidden 
-          accept={accept} 
-          onChange={onFileSelect} 
+          accept={accept}
+          multiple={multiple}
+          onChange={handleChange}
         />
       </Button>
     </Tooltip>

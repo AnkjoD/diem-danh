@@ -4,7 +4,6 @@ import { ClassData } from './course';
 export interface SessionData {
   id: string;
   classData: ClassData;
-  session_id: string | null;
   late_threshold?: string | null;
   end_threshold?: string | null;
   attendances?: AttendanceData[];

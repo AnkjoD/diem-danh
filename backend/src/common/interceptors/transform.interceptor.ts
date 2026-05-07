@@ -49,6 +49,10 @@ export class TransformInterceptor<T> implements NestInterceptor<T, ResponseMessa
     }
 
     if (typeof data === 'object') {
+      if (data instanceof Date) {
+        return data.toISOString();
+      }
+      
       const sanitized = { ...data };
       for (const key in sanitized) {
         if (Object.prototype.hasOwnProperty.call(sanitized, key)) {

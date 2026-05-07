@@ -2,12 +2,23 @@ import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags, ApiCreatedResponse, 
 import { Controller, Get, Post, Body, Param, Delete, Query, Req } from '@nestjs/common';
 import { SessionService } from './session.service';
 import { Session } from './entities/session.entity';
+import { Public } from '~/common/decorators/public.decorator';
 
 @ApiTags('Sessions')
 @ApiBearerAuth()
 @Controller('sessions')
 export class SessionController {
   constructor(private readonly sessionService: SessionService) {}
+
+  @Public()
+  @ApiOperation({ summary: 'Verify if a session is valid for remote capture' })
+  @Get('verify/:id')
+  verify(@Param('id') id: string) {
+    return this.sessionService.verify(id);
+  }
+
+
+
 
   @ApiOperation({ summary: 'Create a new attendance session' })
   @ApiCreatedResponse({ type: Session })

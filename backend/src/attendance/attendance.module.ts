@@ -7,10 +7,11 @@ import { AiModule } from '../ai/ai.module';
 import { MinioModule } from '../minio/minio.module';
 import { Session } from '../session/entities/session.entity';
 import { ClassStudent } from '../class-student/entities/class-student.entity';
+import { ClassEntity } from '../class/entities/class.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Attendance, Session, ClassStudent]),
+    TypeOrmModule.forFeature([Attendance, Session, ClassStudent, ClassEntity]),
     AiModule,
     MinioModule,
   ],

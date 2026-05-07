@@ -25,6 +25,30 @@ export const recognizeAttendanceFace = async (session_id: string, files: File[])
   return response.data;
 };
 
+export const getAttendanceMatrix = async (classId: string) => {
+  const response = await http.get(`/attendances/matrix/${classId}`);
+  return response.data;
+};
+
+export const getAttendanceWarnings = async (classId: string) => {
+  const response = await http.get(`/attendances/warnings/${classId}`);
+  return response.data;
+};
+
+export const exportAttendanceToExcel = async (classId: string, className: string = 'report') => {
+  const response = await http.get(`/attendances/export/${classId}`, {
+    responseType: 'blob',
+  });
+  
+  const url = window.URL.createObjectURL(new Blob([response.data]));
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', `Homura_Attendance_${className}.xlsx`);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+};
+
 export const removeAttendance = async (payload: { session_id: string, student_id: string, archive?: boolean }) => {
   const response = await http.post("/attendances/remove", payload);
   return response.data;

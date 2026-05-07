@@ -17,9 +17,21 @@ const getCookie = (name: string): string | undefined => {
   return undefined;
 };
 
+const getBaseURL = () => {
+  const envURL = process.env.NEXT_PUBLIC_SERVER_URL;
+  if (typeof window !== "undefined") {
+    const hostname = window.location.hostname;
+    // Nếu đang truy cập qua IP (LAN) thì ưu tiên dùng IP đó để gọi API
+    if (hostname !== "localhost" && hostname !== "127.0.0.1" && /^[0-9.]+$/.test(hostname)) {
+      return `${window.location.protocol}//${hostname}:4000`;
+    }
+  }
+  return envURL;
+};
+
 const http = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_SERVER_URL,
-  timeout: 10000,
+  baseURL: getBaseURL(),
+  timeout: 30000, // Tăng timeout cho việc upload ảnh AI
   withCredentials: true,
   headers: {
     "Content-Type": "application/json",
@@ -103,7 +115,7 @@ http.interceptors.response.use(
         }
 
         const response = await axios.post(
-          `${process.env.NEXT_PUBLIC_SERVER_URL}/auth/refresh`,
+          `${getBaseURL()}/auth/refresh`,
           {},
           {
             withCredentials: true,

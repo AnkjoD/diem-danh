@@ -27,6 +27,7 @@ import { useConfirm } from '@/hooks/useConfirm';
 import { useAuth } from '@/contexts/AuthContext';
 import { getStudents, createStudent, deleteStudent, createBulkStudents, updateStudent } from '@/common/api/student';
 import { StudentData } from '@/common/interfaces/student';
+import { fixLocalUrl } from '@/common/utils/url';
 
 const studentSchema = z.object({
   name: z.string().min(2, 'Tên ít nhất 2 ký tự'),
@@ -331,7 +332,7 @@ const StudentsPanel = () => {
                         <Checkbox checked={isSelected} onChange={(e) => handleSelectOne(e, s.id)} />
                       </TableCell>
                       <TableCell>
-                        <Avatar src={s.photo_url || undefined} sx={{ bgcolor: 'primary.dark' }}>
+                        <Avatar src={fixLocalUrl(s.photo_url) || undefined} sx={{ bgcolor: 'primary.dark' }}>
                           {s.name[0]}
                         </Avatar>
                       </TableCell>
@@ -402,7 +403,7 @@ const StudentsPanel = () => {
                   </Box>
                   <CardContent sx={{ pt: 1, flexGrow: 1, textAlign: 'center' }}>
                     <Avatar 
-                      src={s.photo_url || undefined} 
+                      src={fixLocalUrl(s.photo_url) || undefined} 
                       sx={{ width: 80, height: 80, mx: 'auto', mb: 2, bgcolor: 'primary.main', fontSize: '2rem' }}
                     >
                       {s.name[0]}

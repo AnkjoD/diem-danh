@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Body, Param, UseInterceptors, UploadedFile, BadRequestException, Req, UploadedFiles } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseInterceptors, UploadedFile, BadRequestException, Req, UploadedFiles, Res } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { AttendanceService } from './attendance.service';
 import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
+import { Response } from 'express';
 
 @ApiTags('Attendances')
 @ApiBearerAuth()
@@ -14,6 +15,34 @@ export class AttendanceController {
   getBySession(@Param('sessionId') sessionId: string, @Req() req: any) {
     const teacher_id = req.user._id || req.user.id;
     return this.attendanceService.getAttendanceBySession(sessionId, teacher_id);
+  }
+
+  @Get('matrix/:classId')
+  @ApiOperation({ summary: 'Lấy ma trận điểm danh của lớp' })
+  getMatrix(@Param('classId') classId: string, @Req() req: any) {
+    const teacher_id = req.user._id || req.user.id;
+    return this.attendanceService.getClassAttendanceMatrix(classId, teacher_id);
+  }
+
+  @Get('warnings/:classId')
+  @ApiOperation({ summary: 'Lấy danh sách sinh viên vắng học quá ngưỡng' })
+  getWarnings(@Param('classId') classId: string, @Req() req: any) {
+    const teacher_id = req.user._id || req.user.id;
+    return this.attendanceService.getAttendanceWarnings(classId, teacher_id);
+  }
+
+  @Get('export/:classId')
+  @ApiOperation({ summary: 'Xuất báo cáo Excel' })
+  async exportExcel(@Param('classId') classId: string, @Req() req: any, @Res() res: Response) {
+    const teacher_id = req.user._id || req.user.id;
+    const buffer: any = await this.attendanceService.exportClassToExcel(classId, teacher_id);
+    
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="attendance-report-${classId}.xlsx"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
   }
 
   @Post('manual')

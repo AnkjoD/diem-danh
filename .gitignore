@@ -11,6 +11,8 @@ dist/
 build/
 .venv/
 __pycache__/
+.agent/
+temp_agent/
 
 # Docker / DB Volumes
 postgres_data/

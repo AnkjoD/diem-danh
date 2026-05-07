@@ -21,6 +21,14 @@ export class Attendance {
   @Column({ name: 'captured_frame_url', type: 'text', nullable: true })
   captured_frame_url: string;
 
+  @ApiProperty({ example: 'http://localhost:9000/raw-frames/frame_raw.jpg', required: false })
+  @Column({ name: 'raw_frame_url', type: 'text', nullable: true })
+  raw_frame_url: string;
+
+  @ApiProperty({ example: { bbox: [10, 20, 100, 200] }, required: false })
+  @Column({ name: 'training_metadata', type: 'jsonb', nullable: true })
+  training_metadata: any;
+
   @ManyToOne(() => Session, (session) => session.attendances, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'session_id' })
   session: Session;

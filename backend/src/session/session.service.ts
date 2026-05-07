@@ -25,9 +25,14 @@ export class SessionService {
     });
     if (!cls) throw new NotFoundException('Class not found or unauthorized');
 
+    // KIỂM TRA: Nếu đã có phiên cho lớp này hôm nay rồi thì dùng lại phiên đó
+    const existingToday = await this.findTodaySession(teacherId, classId);
+    if (existingToday) {
+      return existingToday;
+    }
+
     const session = this.sessionRepo.create({
       classData: { id: classId },
-      session_id: Date.now().toString(),
       late_threshold: lateThreshold ? new Date(lateThreshold) : null as any,
       end_threshold: endThreshold ? new Date(endThreshold) : null as any,
     });
@@ -79,20 +84,42 @@ export class SessionService {
   }
 
   async findTodaySession(teacherId: string, classId: string) {
-    const today = new Date();
-    const startOfDay = new Date(today);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(today);
-    endOfDay.setHours(23, 59, 59, 999);
+    const VN_OFFSET_MS = 7 * 60 * 60 * 1000; // UTC+7
+    const nowUtc = Date.now();
+    
+    // Tính đầu và cuối ngày theo giờ VN, rồi convert về UTC để query DB
+    const nowInVN = new Date(nowUtc + VN_OFFSET_MS);
+    const startOfDayVN = new Date(Date.UTC(
+      nowInVN.getUTCFullYear(),
+      nowInVN.getUTCMonth(),
+      nowInVN.getUTCDate(),
+      0, 0, 0, 0
+    ));
+    const endOfDayVN = new Date(Date.UTC(
+      nowInVN.getUTCFullYear(),
+      nowInVN.getUTCMonth(),
+      nowInVN.getUTCDate(),
+      23, 59, 59, 999
+    ));
 
-    return this.sessionRepo.findOne({
-      where: {
-        classData: { id: classId, teacher_id: teacherId },
-        created_at: Between(startOfDay, endOfDay),
-      },
-      relations: ['classData', 'attendances', 'attendances.student'],
-      order: { created_at: 'DESC' },
-    });
+    // Convert VN midnight → UTC (trừ 7 tiếng)
+    const startUtc = new Date(startOfDayVN.getTime() - VN_OFFSET_MS);
+    const endUtc   = new Date(endOfDayVN.getTime()   - VN_OFFSET_MS);
+
+    const todaySession = await this.sessionRepo.createQueryBuilder('session')
+      .leftJoinAndSelect('session.classData', 'class')
+      .leftJoinAndSelect('session.attendances', 'attendance')
+      .leftJoinAndSelect('attendance.student', 'student')
+      .where('class.id = :classId', { classId })
+      .andWhere('class.teacher_id = :teacherId', { teacherId })
+      .andWhere('session.created_at BETWEEN :start AND :end', { 
+        start: startUtc, 
+        end: endUtc 
+      })
+      .orderBy('session.created_at', 'DESC')
+      .getOne();
+
+    return todaySession || null;
   }
 
   async update(id: string, data: { late_threshold?: string, end_threshold?: string }, teacherId: string) {
@@ -144,4 +171,24 @@ export class SessionService {
 
     return this.sessionRepo.remove(session);
   }
+  async verify(id: string) {
+    const session = await this.sessionRepo.findOne({ where: { id } });
+    if (!session) return { valid: false };
+
+    const now = new Date();
+    const vnTimeZone = 'Asia/Ho_Chi_Minh';
+    const todayStr = now.toLocaleDateString('sv-SE', { timeZone: vnTimeZone });
+    
+    const sessionDateStr = new Date(session.created_at).toLocaleDateString('sv-SE', { timeZone: vnTimeZone });
+
+
+    if (sessionDateStr !== todayStr) return { valid: false };
+    
+    if (session.end_threshold && now > new Date(session.end_threshold)) {
+      return { valid: false };
+    }
+
+    return { valid: true };
+  }
+
 }

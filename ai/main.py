@@ -30,6 +30,7 @@ matcher = FaceMatcher(dimension=512)
 class RecognizeResponse(BaseModel):
     status: str
     student_ids: list[str] = []
+    bboxes: list[list[float]] = [] # x1, y1, x2, y2
     distances: list[float] = []
     message: str
 
@@ -47,10 +48,9 @@ async def process_upload(file: UploadFile) -> np.ndarray:
   
     return img
 
-def get_face_vector(image: np.ndarray, mode: Literal["register", "recognize"] = "recognize") -> Optional[np.ndarray]:
+def get_face_data(image: np.ndarray, mode: Literal["register", "recognize"] = "recognize"):
     detection_result = detector.detect(image, thresh=0.5, input_size=(640, 640))
     
-    # Debug/Robust unpacking: detect should return (det, kps)
     if not isinstance(detection_result, (tuple, list)) or len(detection_result) < 2:
         return None
     
@@ -60,45 +60,47 @@ def get_face_vector(image: np.ndarray, mode: Literal["register", "recognize"] = 
         return None
         
     if mode == "recognize":
-        recognized_faces = []
-        for landmark in landmarks:
-            aligned_face = aligner.align(image, landmark)
-            recognized_face = recognizer.recognize(aligned_face)
-            recognized_faces.append(recognized_face)
-        return recognized_faces
+        results = []
+        for i in range(len(landmarks)):
+            bbox = det[i, 0:4].tolist()
+            aligned_face = aligner.align(image, landmarks[i])
+            embedding = recognizer.recognize(aligned_face)
+            results.append({"embedding": embedding, "bbox": bbox})
+        return results
     else:
         # For registration, pick the largest face
-        # bboxes are the first 4 columns of det
         bboxes = det[:, 0:4]
         areas = (bboxes[:, 2] - bboxes[:, 0]) * (bboxes[:, 3] - bboxes[:, 1])
         max_area_idx = np.argmax(areas)
         
         aligned_face = aligner.align(image, landmarks[max_area_idx])   
         embedding = recognizer.recognize(aligned_face)
-        return embedding
-
-
+        bbox = bboxes[max_area_idx].tolist()
+        return {"embedding": embedding, "bbox": bbox}
 
 @app.post("/recognize", response_model=RecognizeResponse)
 async def recognize(file: UploadFile = File(...)):
     img = await process_upload(file)
-    embeddings = get_face_vector(img, "recognize")
+    results = get_face_data(img, "recognize")
     
-    if embeddings is None or len(embeddings) == 0:
+    if results is None or len(results) == 0:
         return RecognizeResponse(status="failed", message="No face detected")
     
     student_ids = []
+    bboxes = []
     distances = []
-    for embedding in embeddings:
-        student_id, distance = matcher.search_face(embedding, threshold=1.2)
+    for res in results:
+        student_id, distance = matcher.search_face(res["embedding"], threshold=1.2)
         if student_id and distance:
             student_ids.append(student_id)
+            bboxes.append(res["bbox"])
             distances.append(float(distance))
     
     if len(student_ids) > 0:
         return RecognizeResponse(
             status="success", 
             student_ids=student_ids, 
+            bboxes=bboxes,
             distances=distances, 
             message="Match"
         )

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box, Typography, Paper, Select, MenuItem, FormControl, InputLabel,
@@ -12,6 +12,8 @@ import { EmptyState } from '../common/EmptyState';
 import { useConfirm } from '@/hooks/useConfirm';
 import PeopleIcon from '@mui/icons-material/People';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import HighlightOffIcon from '@mui/icons-material/HighlightOff';
 import CancelIcon from '@mui/icons-material/Cancel';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -21,6 +23,7 @@ import { getCourses } from '@/common/api/course';
 import { getClasses } from '@/common/api/class';
 import { getSessions, deleteSession } from '@/common/api/session';
 import { markAttendanceManual, removeAttendance } from '@/common/api/attendance';
+import { fixLocalUrl } from '@/common/utils/url';
 
 const parseSafeDate = (val: any) => {
   if (!val) return new Date(NaN);
@@ -47,9 +50,25 @@ const parseSafeDate = (val: any) => {
 const StatsPanel = () => {
   const [selectedSubject, setSelectedSubject] = useState('');
   const [selectedClass, setSelectedClass] = useState('');
+
+  useEffect(() => {
+    const savedSubject = sessionStorage.getItem("stats_selectedSubject");
+    const savedClass = sessionStorage.getItem("stats_selectedClass");
+    if (savedSubject) setSelectedSubject(savedSubject);
+    if (savedClass) setSelectedClass(savedClass);
+  }, []);
+
+  useEffect(() => {
+    if (selectedSubject) sessionStorage.setItem("stats_selectedSubject", selectedSubject);
+  }, [selectedSubject]);
+
+  useEffect(() => {
+    if (selectedClass) sessionStorage.setItem("stats_selectedClass", selectedClass);
+  }, [selectedClass]);
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [detailsDialog, setDetailsDialog] = useState<any>(null);
+  const [previewImage, setPreviewImage] = useState<any>(null);
   const [searchAttTerm, setSearchAttTerm] = useState('');
   
   const queryClient = useQueryClient();
@@ -59,55 +78,80 @@ const StatsPanel = () => {
   const { data: classes = [] } = useQuery({ queryKey: ['classes', selectedSubject], queryFn: () => getClasses(selectedSubject), enabled: !!selectedSubject });
   const { data: sessions = [] } = useQuery({ queryKey: ['sessions', selectedClass], queryFn: () => getSessions(selectedClass), enabled: !!selectedClass });
 
+  // Kiểm tra nếu dữ liệu từ sessionStorage trỏ tới môn học/lớp học đã bị xóa
+  useEffect(() => {
+    if (subjects.length > 0 && selectedSubject) {
+      if (!subjects.some((s: any) => s.id === selectedSubject)) {
+        setSelectedSubject("");
+        setSelectedClass("");
+        sessionStorage.removeItem("stats_selectedSubject");
+        sessionStorage.removeItem("stats_selectedClass");
+      }
+    }
+  }, [subjects, selectedSubject]);
+
+  useEffect(() => {
+    if (classes.length > 0 && selectedClass) {
+      if (!classes.some((c: any) => c.id === selectedClass)) {
+        setSelectedClass("");
+        sessionStorage.removeItem("stats_selectedClass");
+      }
+    }
+  }, [classes, selectedClass]);
+
   const sessionsByDate = useMemo(() => {
     const groups: Record<string, any> = {};
     const rawSessions = Array.isArray(sessions) ? sessions : (sessions as any)?.data || [];
     
     rawSessions.forEach((s: any) => {
-      const dateVal = s.created_at || s.createdAt;
-      let d = parseSafeDate(dateVal);
-      if (isNaN(d.getTime())) {
-         const numericId = Number(s.session_id) || Number(s.id);
-         if (!isNaN(numericId) && numericId > 10000000000) d = new Date(numericId);
-      }
-      const sessionTime = d.getTime();
-      const finalDateVal = isNaN(sessionTime) ? 'N/A' : dateVal;
-      const dateKey = isNaN(sessionTime) ? 'unknown' : d.toISOString().split('T')[0];
+      // created_at là ISO string UTC, ví dụ "2026-04-24T21:20:42.772Z"
+      const rawDate = s.created_at || s.createdAt;
+      const d = new Date(rawDate);
+      const isValid = rawDate && !isNaN(d.getTime());
+
+      // Key nhóm theo ngày VN
+      const dateKey = isValid
+        ? d.toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }) // "2026-04-25"
+        : 'unknown';
+
       if (!groups[dateKey]) {
         groups[dateKey] = {
           id: dateKey,
           dateKey,
-          displayDate: isNaN(sessionTime) ? 'Không xác định' : d.toLocaleDateString('vi-VN'),
-          created_at: finalDateVal,
-          session_id: s.id || s.session_id,
+          displayDate: isValid
+            ? d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Ho_Chi_Minh' })
+            : 'Không xác định',
+          created_at: rawDate,
+          sessionId: s.id,
           attendances: [],
         };
       }
+
       (s.attendances || []).forEach((att: any) => {
         const studentId = att.student?.id;
         if (!studentId) return;
-        const existingAttIdx = groups[dateKey].attendances.findIndex((a: any) => a.student?.id === studentId);
-        if (existingAttIdx === -1) groups[dateKey].attendances.push({ ...att, sessionId: s.id });
-        else {
-          const existingAtt = groups[dateKey].attendances[existingAttIdx];
+        const existingIdx = groups[dateKey].attendances.findIndex((a: any) => a.student?.id === studentId);
+        if (existingIdx === -1) {
+          groups[dateKey].attendances.push({ ...att, sessionId: s.id });
+        } else {
           const statusOrder: Record<string, number> = { present: 3, late: 2, absent: 1 };
-          if (statusOrder[att.status] > statusOrder[existingAtt.status]) groups[dateKey].attendances[existingAttIdx] = { ...att, sessionId: s.id };
+          const existing = groups[dateKey].attendances[existingIdx];
+          if ((statusOrder[att.status] || 0) > (statusOrder[existing.status] || 0)) {
+            groups[dateKey].attendances[existingIdx] = { ...att, sessionId: s.id };
+          }
         }
       });
     });
+
     return Object.values(groups).sort((a: any, b: any) => {
-      const dateA = parseSafeDate(a.created_at).getTime();
-      const dateB = parseSafeDate(b.created_at).getTime();
-      const fallbackA = isNaN(dateA) ? (Number(a.session_id) || 0) : dateA;
-      const fallbackB = isNaN(dateB) ? (Number(b.session_id) || 0) : dateB;
-      return fallbackB - fallbackA;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
   }, [sessions]);
 
   const filteredSessions = useMemo(() => {
     return sessionsByDate.filter((s: any) => {
       const sessionDate = parseSafeDate(s.created_at);
-      const sessionTime = isNaN(sessionDate.getTime()) ? (Number(s.session_id) || 0) : sessionDate.getTime();
+      const sessionTime = sessionDate.getTime();
       if (fromDate) {
         const fDate = parseSafeDate(fromDate);
         if (!isNaN(fDate.getTime()) && sessionTime < fDate.getTime()) return false;
@@ -158,41 +202,99 @@ const StatsPanel = () => {
     if (filteredSessions.length === 0) return;
     const subjectName = subjects.find((s: any) => s.id === selectedSubject)?.name || '';
     const className = classes.find((c: any) => c.id === selectedClass)?.name || '';
-    const rows: any[] = [];
-    filteredSessions.forEach((s: any) => {
-      const sessionDate = parseSafeDate(s.created_at);
-      let displayDate = isNaN(sessionDate.getTime()) ? 'N/A' : sessionDate.toLocaleDateString('vi-VN');
+    
+    const studentMap = new Map<string, { code: string, name: string, records: Record<string, string> }>();
+    const sessionColumns: { key: string, label: string }[] = [];
+
+    // Sắp xếp các buổi học theo thời gian tăng dần dựa trên created_at
+    const sortedSessions = [...filteredSessions].sort((a, b) => {
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    });
+
+    sortedSessions.forEach((s: any, idx: number) => {
+      // Sử dụng created_at làm nguồn tin cậy duy nhất cho ngày tháng
+      const sessionDate = new Date(s.created_at);
+      
+      // Định dạng ngày theo giờ Việt Nam
+      const dateStr = sessionDate.toLocaleDateString('vi-VN', { 
+        day: '2-digit', 
+        month: '2-digit',
+        timeZone: 'Asia/Ho_Chi_Minh'
+      });
+      const colLabel = `Buổi ${idx + 1} (${dateStr})`;
+      sessionColumns.push({ key: colLabel, label: colLabel });
+
       (s.attendances || []).forEach((r: any) => {
-        const statusMap: Record<string, string> = { present: 'Có mặt', absent: 'Vắng', late: 'Muộn' };
-        let recognizedAtStr = '';
-        if (r.recognized_at) {
-          const recDate = parseSafeDate(r.recognized_at);
-          if (!isNaN(recDate.getTime())) recognizedAtStr = recDate.toLocaleString('vi-VN');
+        if (!r.student) return;
+        if (!studentMap.has(r.student.id)) {
+          studentMap.set(r.student.id, { 
+            code: r.student.student_code, 
+            name: r.student.name, 
+            records: {} 
+          });
         }
-        rows.push({
-          'Ngày': displayDate,
-          'Mã SV': r.student?.student_code || '',
-          'Họ tên': r.student?.name || '',
-          'Trạng thái': statusMap[r.status] || r.status,
-          'Thời gian nhận diện': recognizedAtStr,
-        });
+        
+        let statusText = 'V';
+        if (r.status === 'present' || r.status === 'late') {
+          const char = r.status === 'present' ? 'P' : 'L';
+          let timeStr = '';
+          if (r.recognized_at) {
+            const recDate = new Date(r.recognized_at);
+            if (!isNaN(recDate.getTime())) {
+              timeStr = ` (${recDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' })})`;
+            }
+          }
+          statusText = `${char}${timeStr}`;
+        }
+        
+        studentMap.get(r.student.id)!.records[colLabel] = statusText;
       });
     });
+
+    const rows: any[] = [];
+    rows.push({ 'Mã SV': `MÔN HỌC: ${subjectName.toUpperCase()}`, 'Họ tên': `LỚP: ${className.toUpperCase()}` });
+    rows.push({ 'Mã SV': `NGÀY XUẤT: ${new Date().toLocaleString('vi-VN')}`, 'Họ tên': `TỔNG SỐ BUỔI ĐÃ HỌC: ${sessionColumns.length}` });
+    rows.push({});
+
+    const sortedStudents = Array.from(studentMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+    sortedStudents.forEach((student) => {
+      const row: any = {
+        'Mã SV': student.code,
+        'Họ tên': student.name,
+      };
+
+      let presentCount = 0;
+      let lateCount = 0;
+      let absentCount = 0;
+
+      sessionColumns.forEach(col => {
+        const status = student.records[col.key] || 'V';
+        row[col.label] = status;
+        if (status.startsWith('P')) presentCount++;
+        else if (status.startsWith('L')) lateCount++;
+        else absentCount++;
+      });
+
+      row['Có mặt (P)'] = presentCount;
+      row['Muộn (L)'] = lateCount;
+      row['Vắng (V)'] = absentCount;
+      row['Tỉ lệ %'] = `${Math.round(((presentCount + lateCount) / sessionColumns.length) * 100)}%`;
+
+      rows.push(row);
+    });
+
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Điểm danh');
-    const summaryRows = [
-      { 'Thông tin': 'Môn học', 'Giá trị': subjectName },
-      { 'Thông tin': 'Lớp', 'Giá trị': className },
-      { 'Thông tin': 'Tổng số ngày', 'Giá trị': filteredSessions.length },
-      { 'Thông tin': 'Tổng lượt', 'Giá trị': stats.total },
-      { 'Thông tin': 'Có mặt', 'Giá trị': stats.present },
-      { 'Thông tin': 'Vắng', 'Giá trị': stats.absent },
-      { 'Thông tin': 'Muộn', 'Giá trị': stats.late },
-      { 'Thông tin': 'Tỉ lệ có mặt', 'Giá trị': stats.total > 0 ? `${Math.round((stats.present / stats.total) * 100)}%` : '0%' },
+    
+    ws['!cols'] = [
+      { wch: 15 }, { wch: 25 },
+      ...sessionColumns.map(() => ({ wch: 12 })),
+      { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }
     ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'Tổng hợp');
-    XLSX.writeFile(wb, `Diem_danh_${className}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Dữ liệu điểm danh');
+    XLSX.writeFile(wb, `Diem_Danh_${className}_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   const statCards = [
@@ -205,7 +307,7 @@ const StatsPanel = () => {
   return (
     <Box>
       <SectionHeader 
-        title="Thống Kê Điểm Danh" 
+        title="Lịch Sử Chi Tiết" 
         actions={
           filteredSessions.length > 0 ? (
             <Button variant="outlined" startIcon={<DownloadIcon />} onClick={exportToExcel}>
@@ -352,14 +454,22 @@ const StatsPanel = () => {
                           <TableCell>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                               <Badge overlap="circular" anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} variant="dot" color={r.status === 'present' ? 'success' : r.status === 'late' ? 'warning' : 'error'} sx={{ '& .MuiBadge-badge': { width: 10, height: 10, borderRadius: '50%', border: '2px solid #1e1e1e', bgcolor: r.status === 'absent' ? '#666' : undefined } }}>
-                                <Avatar src={r.student?.photo_url || undefined} sx={{ width: 32, height: 32 }} imgProps={{ crossOrigin: 'anonymous' }}>{r.student?.name[0]}</Avatar>
+                                <Avatar src={fixLocalUrl(r.student?.photo_url) || undefined} sx={{ width: 32, height: 32 }} imgProps={{ crossOrigin: 'anonymous' }}>{r.student?.name[0]}</Avatar>
                               </Badge>
-                              <Typography variant="body2" fontWeight={500}>
-                                {r.student?.name}
-                                {!r.captured_frame_url && (r.status === 'present' || r.status === 'late') && (
-                                  <Typography component="span" variant="caption" sx={{ ml: 1, color: 'primary.main', fontWeight: 'bold' }}>(Thủ công)</Typography>
+                              <Box>
+                                <Typography variant="body2" fontWeight={500}>
+                                  {r.student?.name}
+                                  {!r.captured_frame_url && (r.status === 'present' || r.status === 'late') && (
+                                    <Typography component="span" variant="caption" sx={{ ml: 1, color: 'primary.main', fontWeight: 'bold' }}>(Thủ công)</Typography>
+                                  )}
+                                </Typography>
+                                {(r.status === 'present' || r.status === 'late') && r.recognized_at && (
+                                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                                    <AccessTimeIcon sx={{ fontSize: 12 }} /> 
+                                    Lúc {new Date(r.recognized_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' })}
+                                  </Typography>
                                 )}
-                              </Typography>
+                              </Box>
                             </Box>
                           </TableCell>
                           <TableCell sx={{ fontFamily: 'monospace' }}>{r.student?.student_code}</TableCell>
@@ -406,19 +516,28 @@ const StatsPanel = () => {
                           </TableCell>
                           <TableCell align="center">
                             {!!r.captured_frame_url && r.status !== 'absent' && (
-                              <IconButton color="error" size="small" onClick={() => openConfirm({
-                                title: 'Xóa dữ liệu ảnh',
-                                message: `Bạn có chắc chắn muốn xóa ảnh minh chứng điểm danh của học sinh ${r.student?.name}?`,
-                                showArchiveOption: true,
-                                onConfirm: (archive: any) => {
-                                   removeAttendanceMut.mutate({ session_id: r.sessionId, student_id: r.student.id, archive: !!archive });
-                                   setDetailsDialog({ 
-                                      ...detailsDialog, 
-                                      attendances: detailsDialog.attendances.map((x: any) => x.id === r.id ? { ...x, status: 'absent', captured_frame_url: null } : x) 
-                                   });
-                                },
-                                isPending: removeAttendanceMut.isPending
-                              })} disabled={removeAttendanceMut.isPending}><DeleteIcon fontSize="small" /></IconButton>
+                              <Box sx={{ display: 'flex', gap: 0.5 }}>
+                                <IconButton 
+                                  color="primary" 
+                                  size="small" 
+                                  onClick={() => setPreviewImage(r)}
+                                >
+                                  <VisibilityIcon fontSize="small" />
+                                </IconButton>
+                                <IconButton color="error" size="small" onClick={() => openConfirm({
+                                  title: 'Xóa dữ liệu ảnh',
+                                  message: `Bạn có chắc chắn muốn xóa ảnh minh chứng điểm danh của học sinh ${r.student?.name}?`,
+                                  showArchiveOption: true,
+                                  onConfirm: (archive: any) => {
+                                     removeAttendanceMut.mutate({ session_id: r.sessionId, student_id: r.student.id, archive: !!archive });
+                                     setDetailsDialog({ 
+                                        ...detailsDialog, 
+                                        attendances: detailsDialog.attendances.map((x: any) => x.id === r.id ? { ...x, status: 'absent', captured_frame_url: null } : x) 
+                                     });
+                                  },
+                                  isPending: removeAttendanceMut.isPending
+                                })} disabled={removeAttendanceMut.isPending}><DeleteIcon fontSize="small" /></IconButton>
+                              </Box>
                             )}
                           </TableCell>
                         </TableRow>
@@ -431,6 +550,73 @@ const StatsPanel = () => {
           })()}
         </DialogContent>
         <DialogActions><Button onClick={() => setDetailsDialog(null)}>Đóng</Button></DialogActions>
+      </Dialog>
+
+      {/* Preview Ảnh Minh Chứng với Bounding Box ảo */}
+      <Dialog 
+        open={!!previewImage} 
+        onClose={() => setPreviewImage(null)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 4,
+            bgcolor: 'background.paper',
+            backgroundImage: 'linear-gradient(rgba(255,255,255,0.05), rgba(255,255,255,0))',
+          }
+        }}
+      >
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1 }}>
+           <Typography component="div" variant="h6" fontWeight="bold">Minh chứng điểm danh - {previewImage?.student?.name}</Typography>
+           <IconButton onClick={() => setPreviewImage(null)} size="small"><HighlightOffIcon /></IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ textAlign: 'center', pb: 4, pt: 2 }}>
+          {previewImage && (
+            <Box sx={{ 
+              position: 'relative', 
+              display: 'inline-block', 
+              borderRadius: 4, 
+              overflow: 'hidden', 
+              border: '2px solid rgba(168, 85, 247, 0.3)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+              bgcolor: '#000'
+            }}>
+              <img 
+                src={fixLocalUrl(previewImage.captured_frame_url)} 
+                alt="Attendance Proof" 
+                crossOrigin="anonymous"
+                style={{ maxWidth: '100%', maxHeight: '70vh', display: 'block' }} 
+              />
+              {/* Vẽ Bounding Box từ Metadata */}
+              {previewImage.training_metadata?.bbox && (
+                <svg
+                  viewBox={`0 0 ${previewImage.training_metadata.imgWidth || 1} ${previewImage.training_metadata.imgHeight || 1}`}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "100%",
+                    pointerEvents: "none",
+                  }}
+                >
+                  <rect
+                    x={previewImage.training_metadata.bbox[0]}
+                    y={previewImage.training_metadata.bbox[1]}
+                    width={previewImage.training_metadata.bbox[2] - previewImage.training_metadata.bbox[0]}
+                    height={previewImage.training_metadata.bbox[3] - previewImage.training_metadata.bbox[1]}
+                    fill="none"
+                    stroke="#c084fc"
+                    strokeWidth="4"
+                  />
+                </svg>
+              )}
+            </Box>
+          )}
+          <Typography variant="caption" display="block" sx={{ mt: 2, opacity: 0.6, fontStyle: 'italic' }}>
+            Ảnh được lưu sạch (Raw) trong MinIO để bảo vệ Dataset. Ô vuông được vẽ động bằng Metadata.
+          </Typography>
+        </DialogContent>
       </Dialog>
     </Box>
   );

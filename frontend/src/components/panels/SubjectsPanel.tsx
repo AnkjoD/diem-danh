@@ -25,6 +25,7 @@ import { getCourses, createCourse, deleteCourse } from '@/common/api/course';
 import { getClasses, createClass, deleteClass, getAssignedStudents, assignStudent, unassignStudent, assignBulkStudents } from '@/common/api/class';
 import { getStudents } from '@/common/api/student';
 import { useAuth } from '@/contexts/AuthContext';
+import { fixLocalUrl } from '@/common/utils/url';
 
 const subjectSchema = z.object({ name: z.string().min(1, 'Tên môn học không được trống') });
 const classSchema = z.object({
@@ -413,7 +414,7 @@ const SubjectsPanel = () => {
                   <ListItemIcon sx={{ minWidth: 40 }}>
                     <Checkbox edge="start" checked={assignedStudentIds.has(student.id)} disableRipple />
                   </ListItemIcon>
-                  <Avatar src={student.photo_url || undefined} sx={{ width: 32, height: 32, mr: 1.5, bgcolor: 'primary.dark' }}>
+                  <Avatar src={fixLocalUrl(student.photo_url) || undefined} sx={{ width: 32, height: 32, mr: 1.5, bgcolor: 'primary.dark' }}>
                     {student.name[0]}
                   </Avatar>
                   <ListItemText primary={student.name} secondary={student.student_code} />
