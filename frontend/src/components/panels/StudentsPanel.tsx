@@ -18,6 +18,7 @@ import PhoneIphoneIcon from '@mui/icons-material/PhoneIphone';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import * as XLSX from 'xlsx';
 import { parseStudentFile } from '@/common/utils/excelParser';
+import { hiddenScrollbarStyles } from '@/theme/scrollbar.styles';
 import FaceRegistration from '@/components/FaceRegistration';
 import { ViewModeToggle } from '../common/ViewModeToggle';
 import { PremiumScrollContainer } from '../common/PremiumScrollContainer';
@@ -205,20 +206,13 @@ const StudentsPanel = () => {
               </Button>
             )}
             
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
               <ImportButton 
                 onFileSelect={handleFileUpload} 
                 disabled={bulkCreateMut.isPending} 
               />
-              <Typography variant="caption" sx={{ 
-                color: 'primary.light', 
-                fontSize: '0.65rem',
-                bgcolor: 'rgba(168,85,247,0.1)',
-                px: 1,
-                borderRadius: 1,
-                border: '1px solid rgba(168,85,247,0.2)'
-              }}>
-                Hỗ trợ: MSSV, Họ Tên, Email, SĐT
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+                MSSV, Họ Tên, Email, SĐT
               </Typography>
             </Box>
 
@@ -293,7 +287,7 @@ const StudentsPanel = () => {
 
         if (viewMode === 'table') {
           return (
-          <PremiumScrollContainer>
+          <PremiumScrollContainer sx={hiddenScrollbarStyles}>
             <Table stickyHeader>
               <TableHead>
                 <TableRow>

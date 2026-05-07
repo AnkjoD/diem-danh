@@ -31,7 +31,7 @@ const getBaseURL = () => {
 
 const http = axios.create({
   baseURL: getBaseURL(),
-  timeout: 30000, // Tăng timeout cho việc upload ảnh AI
+  timeout: 120000, // Tăng timeout lên 2 phút cho việc upload & xử lý AI nhiều ảnh
   withCredentials: true,
   headers: {
     "Content-Type": "application/json",

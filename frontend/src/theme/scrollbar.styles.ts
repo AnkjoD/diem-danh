@@ -35,3 +35,15 @@ export const premiumScrollbarStyles: SxProps<Theme> = {
     height: '16px' 
   }
 };
+
+/**
+ * Styles to hide the scrollbar while maintaining scroll functionality.
+ */
+export const hiddenScrollbarStyles: SxProps<Theme> = {
+  overflowY: 'auto',
+  scrollbarWidth: 'none', // Firefox
+  '&::-webkit-scrollbar': {
+    display: 'none', // Webkit (Chrome, Safari, Edge)
+  },
+  '-ms-overflow-style': 'none', // IE/Edge
+};

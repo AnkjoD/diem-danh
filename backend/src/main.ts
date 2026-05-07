@@ -36,7 +36,12 @@ async function bootstrap() {
   });
 
   const port = process.env.PORT ?? 4000;
-  await app.listen(port, '0.0.0.0');
+  const server = await app.listen(port, '0.0.0.0');
+  
+  // Tăng timeout cho server (5 phút) để xử lý AI lâu
+  const httpServer = app.getHttpServer();
+  httpServer.setTimeout(300000); 
+
   logger.log(`Server đang chạy tại: http://localhost:${port}`);
 }
 bootstrap();

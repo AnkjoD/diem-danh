@@ -21,6 +21,7 @@ export const recognizeAttendanceFace = async (session_id: string, files: File[])
 
   const response = await http.post("/attendances/recognize", formData, {
     headers: { "Content-Type": "multipart/form-data" },
+    timeout: 300000, // 5 phút cho các lô ảnh lớn
   });
   return response.data;
 };

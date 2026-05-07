@@ -22,6 +22,7 @@ import ScienceIcon from '@mui/icons-material/Science';
 import GroupIcon from '@mui/icons-material/Group';
 import * as XLSX from 'xlsx';
 import { parseStudentFile } from '@/common/utils/excelParser';
+import { premiumScrollbarStyles, hiddenScrollbarStyles } from '@/theme/scrollbar.styles';
 import { getCourses, createCourse, deleteCourse } from '@/common/api/course';
 import { getClasses, createClass, deleteClass, getAssignedStudents, assignStudent, unassignStudent, assignBulkStudents } from '@/common/api/class';
 import { getStudents } from '@/common/api/student';
@@ -339,29 +340,16 @@ const SubjectsPanel = () => {
 
       <Dialog open={!!assignDialog} onClose={() => setAssignDialog(null)} maxWidth="sm" fullWidth>
         <DialogTitle fontFamily='"Cinzel", serif'>Gán học sinh - {assignDialog?.className}</DialogTitle>
-        <DialogContent sx={{ overflow: 'hidden', p: 2 }}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 1, mt: 1 }}>
+        <DialogContent sx={{ overflow: 'hidden !important', p: 0, display: 'flex', flexDirection: 'column' }}>
+          <Box sx={{ p: 2, pb: 1 }}>
              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
                 <Button variant="outlined" size="small" component="label" disabled={bulkAssignMut.isPending}>
                     {bulkAssignMut.isPending ? 'Đang tải...' : 'Nhập CSV/Excel'}
                     <input type="file" hidden accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" onChange={handleFileUpload} />
                 </Button>
-                <Box sx={{ 
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                  bgcolor: 'rgba(168,85,247,0.05)', 
-                  px: 1, 
-                  py: 0.5, 
-                  borderRadius: 1, 
-                  border: '1px dotted rgba(168,85,247,0.3)' 
-                }}>
-                  <Typography variant="caption" sx={{ color: 'primary.light', fontSize: '0.65rem', fontWeight: 'bold' }}>
-                    💡 Định dạng file Excel:
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6rem' }}>
-                    Cột: MSSV (Mã SV), Họ Tên (Tên), Email, SĐT
-                  </Typography>
-                </Box>
+                <Typography variant="caption" sx={{ color: 'text.secondary', ml: 1 }}>
+                  MSSV, Họ Tên, Email, SĐT
+                </Typography>
                 <TextField 
                   size="small" 
                   placeholder="Tìm học sinh..." 
@@ -404,7 +392,7 @@ const SubjectsPanel = () => {
               sx={{ border: 'none', bgcolor: 'transparent' }}
             />
           ) : (
-            <PremiumScrollContainer maxHeight="calc(100vh - 250px)" component="box">
+            <PremiumScrollContainer maxHeight="calc(100vh - 250px)" component="box" sx={hiddenScrollbarStyles}>
               <List sx={{ p: 0 }}>
               {(allStudents as any[])
                 .filter(s => s.name.toLowerCase().includes(assignSearch.toLowerCase()) || s.student_code.toLowerCase().includes(assignSearch.toLowerCase()))
