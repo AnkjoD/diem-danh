@@ -21,13 +21,13 @@ echo OK! Docker dang hoat dong.
 echo.
 
 echo [2] Dang tien hanh XAY DUNG LAI (Rebuild) toan bo he thong...
-echo Qua trinh nay se mat mot luc, vui long khong tat cua so nay.
+echo Qua trinh nay se mat mot luc de ap dung cac thay doi moi nhat.
 echo.
 docker-compose -f docker-compose.prod.yml up --build -d
 echo.
 
-echo [3] Dang doi he thong khoi dong sau khi cap nhat (Khoang 10 giay)...
-timeout /t 10 /nobreak >nul
+echo [3] Dang doi he thong khoi dong sau khi cap nhat (Khoang 15 giay)...
+timeout /t 15 /nobreak >nul
 echo.
 
 echo [4] Mo trinh duyet truy cap trang danh cho Giao vien...
