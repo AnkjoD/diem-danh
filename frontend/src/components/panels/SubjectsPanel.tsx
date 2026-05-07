@@ -130,36 +130,37 @@ const SubjectsPanel = () => {
   };
 
   const handleSelectAll = (checked: boolean) => {
-    if (!assignDialog) return;
+    if (!assignDialog || bulkAssignMut.isPending) return;
+    
     const filteredInDialog = (allStudents as any[]).filter(s => 
       s.name.toLowerCase().includes(assignSearch.toLowerCase()) || 
       s.student_code.toLowerCase().includes(assignSearch.toLowerCase())
     );
+
+    let studentsToSync: any[] = [];
+    
     if (checked) {
       const currentAssigned = (assignedStudents as any[]);
       const currentIds = new Set(currentAssigned.map(s => s.id));
-      const studentsToSync = [...currentAssigned];
+      studentsToSync = [...currentAssigned];
+      
       filteredInDialog.forEach(s => {
         if (!currentIds.has(s.id)) studentsToSync.push(s);
       });
-      const payload = studentsToSync.map(s => ({
-        student_code: s.student_code,
-        name: s.name,
-        email: s.email || '',
-        phone: s.phone || '',
-      }));
-      bulkAssignMut.mutate({ classId: assignDialog.classId, students: payload, sync: true });
     } else {
       const filteredIds = new Set(filteredInDialog.map(s => s.id));
-      const studentsToSync = (assignedStudents as any[]).filter(s => !filteredIds.has(s.id));
-      const payload = studentsToSync.map(s => ({
-        student_code: s.student_code,
-        name: s.name,
-        email: s.email || '',
-        phone: s.phone || '',
-      }));
-      bulkAssignMut.mutate({ classId: assignDialog.classId, students: payload, sync: true });
+      studentsToSync = (assignedStudents as any[]).filter(s => !filteredIds.has(s.id));
     }
+
+    const payload = studentsToSync.map(s => ({
+      student_code: s.student_code,
+      name: s.name,
+      email: s.email || '',
+      phone: s.phone || '',
+    }));
+
+    bulkAssignMut.mutate({ classId: assignDialog.classId, students: payload, sync: true });
+  };
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -338,16 +339,29 @@ const SubjectsPanel = () => {
 
       <Dialog open={!!assignDialog} onClose={() => setAssignDialog(null)} maxWidth="sm" fullWidth>
         <DialogTitle fontFamily='"Cinzel", serif'>Gán học sinh - {assignDialog?.className}</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflow: 'hidden', p: 2 }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 1, mt: 1 }}>
              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
                 <Button variant="outlined" size="small" component="label" disabled={bulkAssignMut.isPending}>
                     {bulkAssignMut.isPending ? 'Đang tải...' : 'Nhập CSV/Excel'}
                     <input type="file" hidden accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" onChange={handleFileUpload} />
                 </Button>
-                <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
-                  Yêu cầu cột: MSSV, Họ Tên
-                </Typography>
+                <Box sx={{ 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  bgcolor: 'rgba(168,85,247,0.05)', 
+                  px: 1, 
+                  py: 0.5, 
+                  borderRadius: 1, 
+                  border: '1px dotted rgba(168,85,247,0.3)' 
+                }}>
+                  <Typography variant="caption" sx={{ color: 'primary.light', fontSize: '0.65rem', fontWeight: 'bold' }}>
+                    💡 Định dạng file Excel:
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6rem' }}>
+                    Cột: MSSV (Mã SV), Họ Tên (Tên), Email, SĐT
+                  </Typography>
+                </Box>
                 <TextField 
                   size="small" 
                   placeholder="Tìm học sinh..." 
@@ -356,7 +370,10 @@ const SubjectsPanel = () => {
                   sx={{ flexgrow: 1, minWidth: 200 }}
                 />
                 <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center' }}>
-                    {(() => {
+                  {bulkAssignMut.isPending ? (
+                    <Typography variant="caption" color="primary">Đang cập nhật...</Typography>
+                  ) : (
+                    (() => {
                        const filteredInDialog = (allStudents as any[]).filter(s => 
                         s.name.toLowerCase().includes(assignSearch.toLowerCase()) || 
                         s.student_code.toLowerCase().includes(assignSearch.toLowerCase())
@@ -376,7 +393,8 @@ const SubjectsPanel = () => {
                           <Typography variant="body2" sx={{ mr: 1 }}>{isAllSelected ? "Bỏ chọn" : "Chọn tất cả"}</Typography>
                         </>
                       );
-                    })()}
+                    })()
+                  )}
                 </Box>
              </Box>
           </Box>

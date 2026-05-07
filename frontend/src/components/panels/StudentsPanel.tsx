@@ -205,13 +205,20 @@ const StudentsPanel = () => {
               </Button>
             )}
             
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
               <ImportButton 
                 onFileSelect={handleFileUpload} 
                 disabled={bulkCreateMut.isPending} 
               />
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, fontSize: '0.65rem' }}>
-                Cột yêu cầu: MSSV, Họ Tên
+              <Typography variant="caption" sx={{ 
+                color: 'primary.light', 
+                fontSize: '0.65rem',
+                bgcolor: 'rgba(168,85,247,0.1)',
+                px: 1,
+                borderRadius: 1,
+                border: '1px solid rgba(168,85,247,0.2)'
+              }}>
+                Hỗ trợ: MSSV, Họ Tên, Email, SĐT
               </Typography>
             </Box>
 

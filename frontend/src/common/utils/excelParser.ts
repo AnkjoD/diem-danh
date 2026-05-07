@@ -22,10 +22,10 @@ const normalizeHeader = (header: string): string => {
  * Bản đồ các từ khóa gợi ý cho từng cột
  */
 const COLUMN_MAPS = {
-  student_code: ['mssv', 'masv', 'maso', 'masosinhvien', 'studentcode', 'code', 'id', 'student_code'],
-  name: ['hoten', 'ten', 'name', 'fullname', 'hovaten', 'sinhvien', 'hotenvaten', 'student_name'],
-  email: ['email', 'thudientu', 'mail', 'gmail'],
-  phone: ['sdt', 'sodienthoai', 'phone', 'tel', 'telephone', 'lienhe'],
+  student_code: ['mssv', 'masv', 'maso', 'masosinhvien', 'studentcode', 'code', 'id', 'student_code', 'ma', 'mahocsinh'],
+  name: ['hoten', 'ten', 'name', 'fullname', 'hovaten', 'sinhvien', 'hotenvaten', 'studentname', 'full_name', 'full-name', 'tensinhvien', 'tenhocsinh'],
+  email: ['email', 'thudientu', 'mail', 'gmail', 'diachiemail'],
+  phone: ['sdt', 'sodienthoai', 'phone', 'tel', 'telephone', 'lienhe', 'phonenumber', 'didong', 'mobile'],
 };
 
 export const parseStudentFile = (file: File): Promise<ParsedStudent[]> => {
