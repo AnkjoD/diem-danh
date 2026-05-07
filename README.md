@@ -17,6 +17,7 @@ Hệ thống điểm danh học sinh thông qua nhận diện khuôn mặt sử 
 - **AI Core**: Python (FastAPI), OpenCV, FAISS (Vector Database), InsightFace (SCRFD & WebFace).
 - **Storage**: MinIO (S3 Compatible) để lưu trữ hình ảnh Dataset.
 - **DevOps**: Docker, Docker Compose.
+- **Launcher**: Các file `.bat` giúp người dùng không chuyên vận hành chỉ bằng 1 cú click.
 
 ## 📦 Hướng dẫn cài đặt (Docker)
 
@@ -55,6 +56,11 @@ Khởi chạy Docker:
 ```bash
 docker-compose up -d --build
 ```
+
+### ⚡ Dành cho người dùng không chuyên (Windows)
+Nếu bạn không muốn gõ lệnh, hãy sử dụng các file script có sẵn:
+1. **`start-homura.bat`**: Chạy ngay lập tức hệ thống (mất < 1s nếu đã build).
+2. **`update-homura.bat`**: Tự động tải code mới và build lại toàn bộ hệ thống (Dùng khi có cập nhật tính năng mới).
 
 ### 3. Truy cập ứng dụng
 - **Frontend**: [http://localhost:3000](http://localhost:3000)
