@@ -53,9 +53,6 @@ Dự án được xây dựng dựa trên mô hình **Client-Server** hiện đ�
 - 🟢 **`start-homura.bat`**: Nhấn để bật ứng dụng hàng ngày. Tích hợp sẵn Installer tự động khôi phục dữ liệu nếu bị lỗi cấu hình.
 - 🟡 **`update-homura.bat`**: CHỈ nhấn khi ứng dụng bị lỗi, chạy không lên, hoặc khi bạn vừa kéo bản cập nhật code mới từ Github về. File này sẽ ép hệ thống dọn dẹp và đóng gói lại toàn bộ từ đầu.
 
-> **⚠️ LƯU Ý CHO NGƯỜI PHÁT TRIỂN (DEVELOPERS):** 
-> Mặc định file setup sẽ tự tải thư mục Models từ liên kết Dropbox do tác giả cung cấp. Nếu bạn muốn thay thế link tải Model của riêng bạn, hãy nén thư mục `models` thành định dạng **`.zip`** (KHÔNG DÙNG `.rar`) để lệnh tự giải nén của Windows Powershell trong file `start-homura.bat` hoạt động bình thường.
-
 ---
 
 ## 👨‍💻 Dành Cho Nhà Phát Triển (For Developers)
@@ -80,7 +77,4 @@ diem-danh/
 
 ---
 
-<p align="center">
-  <i>Hệ thống được phát triển với trọng tâm là hiệu năng và trải nghiệm người dùng.</i>
-</p>
 
