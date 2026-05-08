@@ -43,7 +43,7 @@ if not exist ".env" (
         :: Tao random JWT Secret qua powershell
         for /f "delims=" %%i in ('powershell -Command "[guid]::NewGuid().ToString().Replace('-', '')"') do set jwt_secret=%%i
         
-        :: Ghi vao file .env goc
+        :: Ghi vao file .env goc (Tong hop cho Docker)
         echo # DATABASE CONFIG> .env
         echo DB_USERNAME=!db_user!>> .env
         echo DB_PASSWORD=!db_pass!>> .env
@@ -62,15 +62,26 @@ if not exist ".env" (
         echo # SECURITY>> .env
         echo JWT_SECRET=!jwt_secret!>> .env
         
-        :: Nhan ban vao cac thu muc con cho chac chan
-        copy /Y ".env" "backend\.env" >nul
-        copy /Y ".env" "frontend\.env" >nul
+        :: Ghi vao backend\.env (Cac bien he thong)
+        echo DB_HOST=postgres> backend\.env
+        echo DB_PORT=5432>> backend\.env
+        echo DB_USERNAME=!db_user!>> backend\.env
+        echo DB_PASSWORD=!db_pass!>> backend\.env
+        echo DB_DATABASE=!db_name!>> backend\.env
+        echo JWT_SECRET=!jwt_secret!>> backend\.env
+        echo MINIO_ENDPOINT=minio>> backend\.env
+        echo MINIO_ACCESS_KEY=!minio_user!>> backend\.env
+        echo MINIO_SECRET_KEY=!minio_pass!>> backend\.env
+        echo AI_SERVICE_URL=http://ai:8000>> backend\.env
         
-        :: Tao ban du phong
+        :: Ghi vao frontend\.env (Chi ghi cac bien NEXT_PUBLIC_)
+        echo NEXT_PUBLIC_SERVER_URL=http://localhost:4000> frontend\.env
+        
+        :: Tao ban du phong cho file goc
         copy /Y ".env" ".env.backup" >nul
         
         echo.
-        echo [OK] Da tao xong file cau hinh (.env) voi JWT ngau nhien!
+        echo [OK] Da tao xong file cau hinh (.env) cho tung phan!
         echo [OK] Da luu ban du phong tai .env.backup
         echo.
     )
