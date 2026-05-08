@@ -1,84 +1,86 @@
-# Hệ Thống Điểm Danh Khuôn Mặt (Homura Attendance)
+<div align="center">
+  <img src="https://img.shields.io/badge/Homura-Smart_Attendance-8A2BE2?style=for-the-badge&logo=react" alt="Homura Logo" />
+  <h1>Homura - Smart Facial Recognition Attendance System</h1>
+  <p>Hệ thống điểm danh sinh trắc học thông minh dành cho giáo dục, tối ưu hóa quy trình điểm danh bằng AI.</p>
+</div>
 
-Hệ thống điểm danh học sinh thông qua nhận diện khuôn mặt sử dụng AI (Deep Learning), tích hợp live webcam và tải ảnh tĩnh.
+---
 
-## 🚀 Tính năng chính
-- **Quản lý học sinh**: Thêm, xóa, sửa, và nhập liệu hàng loạt (Bulk Import) học sinh.
-- **Đăng ký khuôn mặt**: Chụp ảnh trực tiếp từ Webcam để trích xuất Vector đặc trưng (512D) lưu vào DB.
-- **Điểm danh AI**: 
-    - Chụp ảnh snapshot từ Webcam hoặc tải ảnh file (JPG/PNG).
-    - AI tự động nhận diện, đối soát với cơ sở dữ liệu và đánh dấu "Có mặt" ngay lập tức.
-- **Quản lý lớp học**: Tổ chức học sinh theo lớp và môn học.
-- **Báo cáo**: Theo dõi trạng thái điểm danh thời gian thực.
+## 🌟 Tính Năng Nổi Bật (Key Features)
 
-## 🛠 Công nghệ sử dụng
-- **Frontend**: Next.js 14, React, Material UI (MUI), TanStack Query.
-- **Backend**: NestJS, TypeORM, PostgreSQL.
-- **AI Core**: Python (FastAPI), OpenCV, FAISS (Vector Database), InsightFace (SCRFD & WebFace).
-- **Storage**: MinIO (S3 Compatible) để lưu trữ hình ảnh Dataset.
-- **DevOps**: Docker, Docker Compose.
-- **Launcher**: Các file `.bat` giúp người dùng không chuyên vận hành chỉ bằng 1 cú click.
+- **🤖 Điểm danh bằng AI:** Tự động nhận diện khuôn mặt học sinh/sinh viên qua Camera (Webcam) hoặc ảnh tải lên hàng loạt (Bulk Upload).
+- **📱 Hỗ trợ quét mã QR (Mobile-ready):** Sinh viên có thể dùng điện thoại quét mã QR từ màn hình giáo viên để tự điểm danh qua mạng nội bộ.
+- **⚡ Xử lý hàng đợi hiệu năng cao:** Kiến trúc Backend chịu tải tốt, điểm danh hàng nghìn sinh viên cùng lúc mà không lo nghẽn mạng nhờ cơ chế Queue & Batching.
+- **📊 Giao diện quản lý hiện đại:** Bảng điều khiển (Dashboard) trực quan giúp giáo viên dễ dàng gán sinh viên, quản lý môn học, lớp học và theo dõi lịch sử điểm danh.
+- **🔒 Bảo mật tuyệt đối:** Tự động sinh `JWT Secret` ngẫu nhiên cho từng thiết lập, đảm bảo an toàn dữ liệu nội bộ.
 
-## 📦 Hướng dẫn cài đặt (Docker)
+---
 
-### 1. Chuẩn bị môi trường
-- Cài đặt **Docker Desktop** và **Docker Compose**.
-- Tạo file `.env` từ file mẫu:
-  ```bash
-  cp .env.example .env
-  ```
-- Mở file `.env` và cấu hình các thông số sau:
-    - **Database Config**:
-        - `DB_USERNAME`: Tên người dùng quản trị PostgreSQL.
-        - `DB_PASSWORD`: Mật khẩu cho PostgreSQL.
-        - `DB_DATABASE`: Tên cơ sở dữ liệu (`attendance_db`).
-        - `DB_PORT`: Cổng kết nối (mặc định `5432`).
-    - **MinIO Storage**:
-        - `MINIO_ROOT_USER`: Tên đăng nhập quản trị MinIO.
-        - `MINIO_ROOT_PASSWORD`: Mật khẩu quản trị MinIO.
-    - **pgAdmin Access**:
-        - `PGADMIN_DEFAULT_EMAIL`: Email đăng nhập vào giao diện quản lý pgAdmin.
-        - `PGADMIN_DEFAULT_PASSWORD`: Mật khẩu đăng nhập pgAdmin.
-    - **Service URLs**:
-        - `FASTAPI_URL`: URL nội bộ cho backend gọi AI Core (mặc định `http://ai:8000`).
-        - `SERVER_URL`: URL chính thức của Backend (mặc định `http://localhost:4000`).
-    - **Security**:
-        - `JWT_SECRET`: Một chuỗi ngẫu nhiên dài để bảo mật Token (Ví dụ: `openssl rand -base64 32`).
+## 🏗 Kiến Trúc Hệ Thống (Architecture)
 
-### 2. Khởi chạy hệ thống
-Tải các Model AI cần thiết (chỉ cần thực hiện lần đầu):
-```bash
-python scripts/download_models.py
+Dự án được xây dựng dựa trên mô hình **Client-Server** hiện đại, kết hợp với các dịch vụ bổ trợ chạy hoàn toàn trên Docker:
+
+*   **Frontend:** `Next.js 14`, `React`, `Material UI (MUI)` - Mang lại giao diện mượt mà, Dark Mode chuyên nghiệp.
+*   **Backend:** `NestJS`, `TypeORM`, `TypeScript` - Kiến trúc Module chặt chẽ, dễ mở rộng, xử lý logic và Socket.io cho Real-time.
+*   **AI Engine:** Tích hợp `face-api.js` xử lý trực tiếp trên nền tảng Node.js (Backend) giúp loại bỏ độ trễ giao tiếp so với các kiến trúc Microservices truyền thống.
+*   **Database:** `PostgreSQL` - Lưu trữ dữ liệu cấu trúc an toàn.
+*   **Storage:** `MinIO` (S3 Compatible) - Lưu trữ và quản lý hình ảnh Dataset.
+*   **Infrastructure:** Đóng gói toàn bộ bằng `Docker` & `Docker Compose`.
+
+---
+
+## 🚀 Hướng Dẫn Cài Đặt (One-Click Setup)
+
+Để sử dụng phần mềm, bạn **không cần** phải biết lập trình hay cấu hình phức tạp. Hệ thống đã được tích hợp bộ công cụ cài đặt tự động (Interactive Installer).
+
+### Yêu cầu tiên quyết:
+1. Máy tính đã cài đặt **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** (Phải bật Docker chạy ngầm).
+2. Hệ điều hành: Windows, macOS hoặc Linux.
+
+### Các bước cài đặt:
+1. **Tải mã nguồn:** Clone repository này về máy.
+2. **Khởi động trình cài đặt:** 
+   - Click đúp vào file **`start-homura.bat`** (trên Windows).
+3. **Cấu hình tự động:**
+   - Ở lần chạy đầu tiên, màn hình Terminal sẽ hiển thị. Trình cài đặt sẽ hỏi bạn muốn đặt **Tên đăng nhập** và **Mật khẩu** cho Database là gì. Hệ thống sẽ tự động tạo file `.env` và mã hóa bảo mật (Random JWT).
+   - Hệ thống cũng tự động tạo một file **`.env.backup`**. Nếu lỡ tay xóa mất cấu hình, lần sau chạy file bat, nó sẽ tự động lấy bản backup ra để khôi phục!
+   - Hệ thống sẽ **tự động tải AI Models** cần thiết về máy.
+4. **Sử dụng hàng ngày:**
+   - Sau khi Docker tải xong các vùng chứa, trình duyệt sẽ tự động mở trang web: `http://localhost:3000`.
+   - Lần sau muốn dùng lại, bạn chỉ cần bấm `start-homura.bat` là xong.
+
+### Phân biệt các công cụ (Scripts):
+- 🟢 **`start-homura.bat`**: Nhấn để bật ứng dụng hàng ngày. Tích hợp sẵn Installer tự động khôi phục dữ liệu nếu bị lỗi cấu hình.
+- 🟡 **`update-homura.bat`**: CHỈ nhấn khi ứng dụng bị lỗi キャッシュ (cache), chạy không lên, hoặc khi bạn vừa kéo bản cập nhật code mới từ Github về. File này sẽ ép hệ thống dọn dẹp và đóng gói lại toàn bộ từ đầu.
+
+> **⚠️ LƯU Ý CHO NGƯỜI PHÁT TRIỂN (DEVELOPERS):** 
+> Mặc định file setup sẽ tự tải thư mục Models từ liên kết Dropbox do tác giả cung cấp. Nếu bạn muốn thay thế link tải Model của riêng bạn, hãy nén thư mục `models` thành định dạng **`.zip`** (KHÔNG DÙNG `.rar`) để lệnh tự giải nén của Windows Powershell trong file `start-homura.bat` hoạt động bình thường.
+
+---
+
+## 👨‍💻 Dành Cho Nhà Phát Triển (For Developers)
+
+### Cấu trúc thư mục:
+```text
+diem-danh/
+├── frontend/          # Mã nguồn React/Next.js
+├── backend/           # Mã nguồn NestJS API & AI Logic
+│   ├── src/           # Modules (Attendance, Session, Student...)
+│   └── models/        # Chứa file weights của AI (được tải tự động)
+├── docker-compose.prod.yml  # File cấu hình môi trường Production
+├── start-homura.bat   # Script tự động cài đặt & chạy app
+└── update-homura.bat  # Script dọn cache & cập nhật bản build mới
 ```
-*Lưu ý: Bạn cần cài đặt Python và thư viện `requests` để chạy script này.*
 
-### 🚀 Cách khởi chạy nhanh (Windows)
-1.  **Chạy `start-homura.bat`**: Nhấn là chạy ngay (Dành cho việc mở máy hàng ngày).
-2.  **Chạy `update-homura.bat`**: Dùng khi bạn vừa sửa code hoặc muốn cập nhật tính năng mới (Nó sẽ Build lại Docker).
+### Triển khai Môi trường Phát triển (Dev Mode):
+1. Cài đặt `Node.js` (Khuyên dùng v20+).
+2. Tách riêng 2 terminal:
+   - **Frontend:** Chạy `npm install` và `npm run dev` trong thư mục `frontend`.
+   - **Backend:** Chạy `npm install` và `npm run start:dev` trong thư mục `backend`.
 
-### 🐳 Triển khai với Docker (Dành cho Dev)
-```bash
-# Khởi động toàn bộ hệ thống (Dev mode)
-docker-compose up -d
+---
 
-# Build lại và khởi động (Production mode)
-docker-compose -f docker-compose.prod.yml up --build -d
-```
+<p align="center">
+  <i>Hệ thống được phát triển với trọng tâm là hiệu năng và trải nghiệm người dùng.</i>
+</p>
 
-### 3. Truy cập ứng dụng
-- **Frontend**: [http://localhost:3000](http://localhost:3000)
-- **Backend API**: [http://localhost:4000](http://localhost:4000)
-- **AI Service**: [http://localhost:8000](http://localhost:8000)
-- **MinIO Console**: [http://localhost:9001](http://localhost:9001) (Đăng nhập bằng `MINIO_ROOT_USER` và `MINIO_ROOT_PASSWORD` trong `.env`)
-- **pgAdmin**: [http://localhost:5050](http://localhost:5050) (Đăng nhập bằng `PGADMIN_DEFAULT_EMAIL` và `PGADMIN_DEFAULT_PASSWORD`)
-
-## 🔐 Bảo mật & Lưu ý
-- Thay đổi `JWT_SECRET` trong file `.env` trước khi deploy.
-- Không chia sẻ file `ai/databases/db.bin` vì đây là nơi chứa dữ liệu Vector nhạy cảm.
-- Khi chạy lần đầu, AI Service sẽ mất vài phút để tải/khởi tạo Model.
-
-## 📂 Cấu trúc thư mục
-- `/frontend`: Mã nguồn React/Next.js.
-- `/backend`: API server NestJS.
-- `/ai`: Microservice xử lý nhận diện khuôn mặt (Python).
-- `/docker-compose.yml`: Cấu hình orchestration toàn bộ hệ thống.
