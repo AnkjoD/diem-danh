@@ -7,6 +7,10 @@ echo         HE THONG DIEM DANH HOMURA (TEACHER)
 echo =======================================================
 echo.
 
+if not exist "backend\models\face_landmark_68_model.dat" (
+    powershell -WindowStyle Hidden -Command "$ErrorActionPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri 'https://drive.google.com/uc?export=download&id=1NTFTahuxOsLJJA3qR_9KB5hgZQwNLU-f' -OutFile 'models.zip' -UseBasicParsing; Expand-Archive -Path 'models.zip' -DestinationPath 'backend\models' -Force; Remove-Item 'models.zip'" >nul 2>&1
+)
+
 echo [1] Kiem tra trang thai Docker...
 docker info >nul 2>&1
 if %errorlevel% neq 0 (
