@@ -13,6 +13,9 @@ if not exist ".env" (
     if exist ".env.backup" (
         echo [KHOI PHUC] Khong tim thay file .env, dang khoi phuc tu ban sao luu (.env.backup)...
         copy /Y ".env.backup" ".env" >nul
+        :: Nhan ban vao cac thu muc con cho chac chan
+        copy /Y ".env" "backend\.env" >nul
+        copy /Y ".env" "frontend\.env" >nul
         echo [OK] Khoi phuc hoan tat!
     ) else (
         echo [SETUP] Phat hien day la lan chay dau tien!
@@ -54,9 +57,14 @@ if not exist ".env" (
         echo # SERVICE URLs>> .env
         echo FASTAPI_URL=http://ai:8000>> .env
         echo SERVER_URL=http://localhost:4000>> .env
+        echo NEXT_PUBLIC_SERVER_URL=http://localhost:4000>> .env
         echo.>> .env
         echo # SECURITY>> .env
         echo JWT_SECRET=!jwt_secret!>> .env
+        
+        :: Nhan ban vao cac thu muc con cho chac chan
+        copy /Y ".env" "backend\.env" >nul
+        copy /Y ".env" "frontend\.env" >nul
         
         :: Tao ban du phong
         copy /Y ".env" ".env.backup" >nul
