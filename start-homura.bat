@@ -90,16 +90,15 @@ echo.
 :check_models
 :: 2. Tai Models AI neu thieu
 echo [1] Kiem tra du lieu AI (Models)...
-if not exist "ai\models\detector.onnx" (
-    echo Phat hien thieu AI Models!
-    echo Dang tai xuong va giai nen tu dong (Am tham, mat vai phut tuy mang)...
-    :: LUU Y: PHAI LA FILE ZIP, KHONG DUNG RAR! Link Dropbox dl=1 de tai truc tiep.
-    powershell -WindowStyle Hidden -Command "$ErrorActionPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri 'https://www.dropbox.com/scl/fi/quulqjy2vqoapwovz1kd1/models.zip?rlkey=jv99r0i9lpwrglnfpkneclg9w&st=3wdofte3&dl=1' -OutFile 'models.zip' -UseBasicParsing; Expand-Archive -Path 'models.zip' -DestinationPath 'ai' -Force; Remove-Item 'models.zip'" >nul 2>&1
-    echo [OK] Tai AI Models hoan tat!
-) else (
-    echo [OK] AI Models da san sang.
-)
+if exist "ai\models\detector.onnx" goto check_docker
 
+echo Phat hien thieu AI Models!
+echo Dang tai xuong va giai nen tu dong (Am tham, mat vai phut tuy mang)...
+:: LUU Y: PHAI LA FILE ZIP, KHONG DUNG RAR! Link Dropbox dl=1 de tai truc tiep.
+powershell -WindowStyle Hidden -Command "$ErrorActionPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri 'https://www.dropbox.com/scl/fi/quulqjy2vqoapwovz1kd1/models.zip?rlkey=jv99r0i9lpwrglnfpkneclg9w&st=3wdofte3&dl=1' -OutFile 'models.zip' -UseBasicParsing; Expand-Archive -Path 'models.zip' -DestinationPath 'ai' -Force; Remove-Item 'models.zip'" >nul 2>&1
+echo [OK] Tai AI Models hoan tat!
+
+:check_docker
 :: 3. Kiem tra Docker
 echo.
 echo [2] Kiem tra trang thai Docker...
