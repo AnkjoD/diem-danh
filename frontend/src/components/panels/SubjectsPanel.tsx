@@ -339,7 +339,15 @@ const SubjectsPanel = () => {
 
       <Dialog open={!!assignDialog} onClose={() => setAssignDialog(null)} maxWidth="sm" fullWidth>
         <DialogTitle fontFamily='"Cinzel", serif'>Gán học sinh - {assignDialog?.className}</DialogTitle>
-        <DialogContent sx={{ ...hiddenScrollbarStyles, p: 0, display: 'flex', flexDirection: 'column' }}>
+        <DialogContent sx={{ 
+          ...hiddenScrollbarStyles, 
+          p: 0, 
+          display: 'flex', 
+          flexDirection: 'column',
+          maskImage: "linear-gradient(to bottom, black 90%, transparent 100%)",
+          WebkitMaskImage: "linear-gradient(to bottom, black 90%, transparent 100%)"
+        }}>
+
           <Box sx={{ p: 2, pb: 1 }}>
              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
                 <Button variant="outlined" size="small" component="label" disabled={bulkAssignMut.isPending}>
@@ -392,19 +400,32 @@ const SubjectsPanel = () => {
             />
           ) : (
             <Box sx={{ flex: 1 }}>
-              <List sx={{ p: 0, pb: 4 }}>
+              <List sx={{ px: 2, pb: 10 }}>
               {(allStudents as any[])
                 .filter(s => s.name.toLowerCase().includes(assignSearch.toLowerCase()) || s.student_code.toLowerCase().includes(assignSearch.toLowerCase()))
                 .map((student: any) => (
                 <ListItem key={student.id} dense onClick={() => toggleStudent(student.id)} component="li" style={{ cursor: 'pointer' }}
-                  sx={{ borderRadius: 1, mb: 0.5, bgcolor: assignedStudentIds.has(student.id) ? 'rgba(168,85,247,0.1)' : undefined }}>
+                  sx={{ 
+                    borderRadius: 2, 
+                    mb: 1, 
+                    py: 1,
+                    px: 1.5,
+                    bgcolor: assignedStudentIds.has(student.id) ? 'rgba(168,85,247,0.15)' : 'rgba(255,255,255,0.03)',
+                    border: assignedStudentIds.has(student.id) ? '1px solid rgba(168,85,247,0.3)' : '1px solid transparent',
+                    transition: 'all 0.2s',
+                    '&:hover': { bgcolor: assignedStudentIds.has(student.id) ? 'rgba(168,85,247,0.25)' : 'rgba(255,255,255,0.08)' }
+                  }}>
                   <ListItemIcon sx={{ minWidth: 40 }}>
                     <Checkbox edge="start" checked={assignedStudentIds.has(student.id)} disableRipple />
                   </ListItemIcon>
-                  <Avatar src={fixLocalUrl(student.photo_url) || undefined} sx={{ width: 32, height: 32, mr: 1.5, bgcolor: 'primary.dark' }}>
+                  <Avatar src={fixLocalUrl(student.photo_url) || undefined} sx={{ width: 36, height: 36, mr: 2, bgcolor: 'primary.dark' }}>
                     {student.name[0]}
                   </Avatar>
-                  <ListItemText primary={student.name} secondary={student.student_code} />
+                  <ListItemText 
+                    primaryTypographyProps={{ fontWeight: assignedStudentIds.has(student.id) ? 'bold' : 'normal' }}
+                    primary={student.name} 
+                    secondary={student.student_code} 
+                  />
                 </ListItem>
               ))}
               </List>

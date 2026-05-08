@@ -2107,15 +2107,17 @@ const FaceAttendancePanel = () => {
 
                 <PremiumScrollContainer
                   component="box"
-                  maxHeight="60vh"
+                  maxHeight="50vh"
                   sx={{ 
-                    p: 1, 
+                    pt: 1, px: 1, pb: 10, // Tăng pb để không bị nút che khuất
                     width: "100%", 
                     display: "flex", 
                     flexDirection: "column", 
                     alignItems: "center",
                     gap: 2.5,
-                    // Ẩn thanh cuộn nhưng vẫn cho phép kéo
+                    // Hiệu ứng mờ ở đáy báo hiệu có thể cuộn tiếp
+                    maskImage: "linear-gradient(to bottom, black 80%, transparent 100%)",
+                    WebkitMaskImage: "linear-gradient(to bottom, black 80%, transparent 100%)",
                     "&::-webkit-scrollbar": { display: "none" },
                     msOverflowStyle: "none",
                     scrollbarWidth: "none",
