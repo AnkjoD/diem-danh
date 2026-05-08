@@ -23,7 +23,9 @@ echo.
 echo [2] Dang tien hanh XAY DUNG LAI (Rebuild) toan bo he thong...
 echo Qua trinh nay se mat mot luc de ap dung cac thay doi moi nhat.
 echo.
-docker-compose -f docker-compose.prod.yml up --build -d
+docker-compose -f docker-compose.prod.yml down
+docker-compose -f docker-compose.prod.yml build --no-cache
+docker-compose -f docker-compose.prod.yml up -d
 echo.
 
 echo [3] Dang doi he thong khoi dong sau khi cap nhat (Khoang 15 giay)...
