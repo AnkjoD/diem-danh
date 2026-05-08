@@ -340,7 +340,7 @@ const SubjectsPanel = () => {
 
       <Dialog open={!!assignDialog} onClose={() => setAssignDialog(null)} maxWidth="sm" fullWidth>
         <DialogTitle fontFamily='"Cinzel", serif'>Gán học sinh - {assignDialog?.className}</DialogTitle>
-        <DialogContent sx={{ overflow: 'hidden !important', p: 0, display: 'flex', flexDirection: 'column' }}>
+        <DialogContent sx={{ ...hiddenScrollbarStyles, p: 0, display: 'flex', flexDirection: 'column' }}>
           <Box sx={{ p: 2, pb: 1 }}>
              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
                 <Button variant="outlined" size="small" component="label" disabled={bulkAssignMut.isPending}>
@@ -392,8 +392,8 @@ const SubjectsPanel = () => {
               sx={{ border: 'none', bgcolor: 'transparent' }}
             />
           ) : (
-            <PremiumScrollContainer maxHeight="calc(100vh - 250px)" component="box" sx={hiddenScrollbarStyles}>
-              <List sx={{ p: 0 }}>
+            <Box sx={{ flex: 1 }}>
+              <List sx={{ p: 0, pb: 4 }}>
               {(allStudents as any[])
                 .filter(s => s.name.toLowerCase().includes(assignSearch.toLowerCase()) || s.student_code.toLowerCase().includes(assignSearch.toLowerCase()))
                 .map((student: any) => (
@@ -409,7 +409,7 @@ const SubjectsPanel = () => {
                 </ListItem>
               ))}
               </List>
-            </PremiumScrollContainer>
+            </Box>
           )}
         </DialogContent>
         <DialogActions><Button onClick={() => setAssignDialog(null)}>Đóng</Button></DialogActions>
