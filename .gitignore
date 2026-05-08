@@ -24,4 +24,8 @@ minio_data/
 
 # OS
 .DS_Store
-Thumbs.db
+Thumbs.db  
+# Testing and Scripts  
+*.spec.ts  
+scratch/  
+test/  
