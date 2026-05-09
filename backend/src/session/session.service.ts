@@ -86,25 +86,23 @@ export class SessionService {
   async findTodaySession(teacherId: string, classId: string) {
     const VN_OFFSET_MS = 7 * 60 * 60 * 1000; // UTC+7
     const nowUtc = Date.now();
-    
-    // Tính đầu và cuối ngày theo giờ VN, rồi convert về UTC để query DB
-    const nowInVN = new Date(nowUtc + VN_OFFSET_MS);
-    const startOfDayVN = new Date(Date.UTC(
-      nowInVN.getUTCFullYear(),
-      nowInVN.getUTCMonth(),
-      nowInVN.getUTCDate(),
-      0, 0, 0, 0
-    ));
-    const endOfDayVN = new Date(Date.UTC(
-      nowInVN.getUTCFullYear(),
-      nowInVN.getUTCMonth(),
-      nowInVN.getUTCDate(),
-      23, 59, 59, 999
-    ));
 
-    // Convert VN midnight → UTC (trừ 7 tiếng)
-    const startUtc = new Date(startOfDayVN.getTime() - VN_OFFSET_MS);
-    const endUtc   = new Date(endOfDayVN.getTime()   - VN_OFFSET_MS);
+    // Tính ngày hiện tại theo giờ VN
+    const nowInVN = new Date(nowUtc + VN_OFFSET_MS);
+
+    // Tính đầu ngày VN (00:00:00) và cuối ngày VN (23:59:59) theo UTC
+    const startUtc = new Date(Date.UTC(
+      nowInVN.getUTCFullYear(),
+      nowInVN.getUTCMonth(),
+      nowInVN.getUTCDate(),
+      -7, 0, 0, 0  // Giờ 0 VN = Giờ -7 UTC (tức là 17:00 UTC ngày hôm trước)
+    ));
+    const endUtc = new Date(Date.UTC(
+      nowInVN.getUTCFullYear(),
+      nowInVN.getUTCMonth(),
+      nowInVN.getUTCDate(),
+      16, 59, 59, 999  // Giờ 23:59 VN = Giờ 16:59 UTC
+    ));
 
     const todaySession = await this.sessionRepo.createQueryBuilder('session')
       .leftJoinAndSelect('session.classData', 'class')
@@ -176,14 +174,9 @@ export class SessionService {
     if (!session) return { valid: false };
 
     const now = new Date();
-    const vnTimeZone = 'Asia/Ho_Chi_Minh';
-    const todayStr = now.toLocaleDateString('sv-SE', { timeZone: vnTimeZone });
-    
-    const sessionDateStr = new Date(session.created_at).toLocaleDateString('sv-SE', { timeZone: vnTimeZone });
 
-
-    if (sessionDateStr !== todayStr) return { valid: false };
-    
+    // Chỉ vô hiệu hóa khi đã qua end_threshold (giờ kết thúc),
+    // không vô hiệu hóa chỉ vì qua ngày (học sinh vẫn có thể nộp ảnh muộn)
     if (session.end_threshold && now > new Date(session.end_threshold)) {
       return { valid: false };
     }
