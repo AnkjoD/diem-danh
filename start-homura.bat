@@ -110,8 +110,8 @@ echo [1] Kiem tra du lieu AI (Models)...
 if exist "ai\models\detector.onnx" goto check_docker
 
 echo Phat hien thieu AI Models!
-echo Dang tai xuong va giai nen tu dong (Am tham, mat vai phut tuy mang)...
-powershell -WindowStyle Hidden -Command "$ErrorActionPreference = 'SilentlyContinue'; if (!(Test-Path 'ai/models.zip')) { Invoke-WebRequest -Uri 'https://www.dropbox.com/scl/fo/zthoyfvi73a2c21iomhiv/AGI8_iZlPSqZOUGXjzt7OwU?rlkey=q8edbm8wmnvfeez0dfep2u9hy&st=qsfzyjs5&dl=1' -OutFile 'ai/models.zip' -UseBasicParsing }; Expand-Archive -Path 'ai/models.zip' -DestinationPath 'ai/models_tmp' -Force; if (!(Test-Path 'ai/models')) { New-Item -ItemType Directory -Path 'ai/models' | Out-Null }; Get-ChildItem -Path 'ai/models_tmp' -Recurse -File | Move-Item -Destination 'ai/models' -Force; Remove-Item 'ai/models_tmp' -Recurse -Force" >nul 2>&1
+echo Dang tai xuong va giai nen (Co the mat 5-10 phut tuy mang, VUI LONG DOI)...
+powershell -Command "if (!(Test-Path 'ai\models.zip')) { Invoke-WebRequest -Uri 'https://www.dropbox.com/scl/fo/zthoyfvi73a2c21iomhiv/AGI8_iZlPSqZOUGXjzt7OwU?rlkey=q8edbm8wmnvfeez0dfep2u9hy^&st=qsfzyjs5^&dl=1' -OutFile 'ai\models.zip' -UseBasicParsing }; Expand-Archive -Path 'ai\models.zip' -DestinationPath 'ai\models_tmp' -Force; if (!(Test-Path 'ai\models')) { New-Item -ItemType Directory -Path 'ai\models' | Out-Null }; Get-ChildItem -Path 'ai\models_tmp' -Recurse -File | Move-Item -Destination 'ai\models' -Force; Remove-Item 'ai\models_tmp' -Recurse -Force"
 echo [OK] Tai AI Models hoan tat!
 
 :check_docker
