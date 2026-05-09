@@ -48,22 +48,7 @@ const SubjectsPanel = () => {
   const subjectForm = useForm({ resolver: zodResolver(subjectSchema), defaultValues: { name: '' } });
   const classForm = useForm({ resolver: zodResolver(classSchema), defaultValues: { name: '', type: 'theory' as const } });
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (document.activeElement?.tagName === 'INPUT') return;
-      if (e.key === 'Enter') {
-        if (subjectDialog) {
-          e.preventDefault();
-          subjectForm.handleSubmit((data) => createCourseMut.mutate(data))();
-        } else if (classDialog) {
-          e.preventDefault();
-          classForm.handleSubmit((data) => createClassMut.mutate({ course_id: classDialog, ...data }))();
-        }
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [subjectDialog, classDialog, subjectForm, classForm]);
+  // Removed custom keydown handler to prevent double submissions. We use <form> tags instead.
 
   const { data: courses = [] } = useQuery({ queryKey: ['courses'], queryFn: getCourses });
   const { data: allClasses = [] } = useQuery({ queryKey: ['classes'], queryFn: () => getClasses() });
@@ -315,26 +300,28 @@ const SubjectsPanel = () => {
       </Dialog>
 
       <Dialog open={!!classDialog} onClose={() => setClassDialog(null)} maxWidth="sm" fullWidth>
-        <DialogTitle fontFamily='"Cinzel", serif'>Thêm Lớp</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-          <Controller name="name" control={classForm.control} render={({ field }) => (
-            <TextField {...field} label="Tên lớp (VD: Lớp 1)" fullWidth error={!!classForm.formState.errors.name} helperText={classForm.formState.errors.name?.message} />
-          )} />
-          <Controller name="type" control={classForm.control} render={({ field }) => (
-            <FormControl fullWidth>
-              <InputLabel>Loại</InputLabel>
-              <Select {...field} label="Loại">
-                <MenuItem value="theory">Lý thuyết</MenuItem>
-                <MenuItem value="practice">Thực hành</MenuItem>
-                <MenuItem value="both">Cả hai (LT & TH)</MenuItem>
-              </Select>
-            </FormControl>
-          )} />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setClassDialog(null)}>Huỷ</Button>
-          <Button variant="contained" onClick={classForm.handleSubmit((data) => createClassMut.mutate({ ...data, course_id: classDialog! }))}>Thêm</Button>
-        </DialogActions>
+        <form onSubmit={classForm.handleSubmit((data) => createClassMut.mutate({ ...data, course_id: classDialog! }))}>
+          <DialogTitle fontFamily='"Cinzel", serif'>Thêm Lớp</DialogTitle>
+          <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <Controller name="name" control={classForm.control} render={({ field }) => (
+              <TextField {...field} label="Tên lớp (VD: Lớp 1)" fullWidth error={!!classForm.formState.errors.name} helperText={classForm.formState.errors.name?.message} />
+            )} />
+            <Controller name="type" control={classForm.control} render={({ field }) => (
+              <FormControl fullWidth>
+                <InputLabel>Loại</InputLabel>
+                <Select {...field} label="Loại">
+                  <MenuItem value="theory">Lý thuyết</MenuItem>
+                  <MenuItem value="practice">Thực hành</MenuItem>
+                  <MenuItem value="both">Cả hai (LT & TH)</MenuItem>
+                </Select>
+              </FormControl>
+            )} />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setClassDialog(null)}>Huỷ</Button>
+            <Button type="submit" variant="contained" disabled={createClassMut.isPending}>Thêm</Button>
+          </DialogActions>
+        </form>
       </Dialog>
 
       <Dialog open={!!assignDialog} onClose={() => setAssignDialog(null)} maxWidth="sm" fullWidth>

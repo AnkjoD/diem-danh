@@ -109,11 +109,12 @@ async def recognize(file: UploadFile = File(...)):
 @app.post("/register", response_model=RegisterResponse)
 async def register(student_id: str = Form(...), file: UploadFile = File(...)):
     img = await process_upload(file)
-    embedding = get_face_vector(img, "register")
+    result = get_face_data(img, "register")
     
-    if embedding is None:
+    if result is None:
         raise HTTPException(status_code=400, detail="No face detected")
         
+    embedding = result["embedding"]
     matcher.add_face(embedding, student_id)
     return RegisterResponse(status="success", message=f"Registered {student_id}", embedding=embedding.tolist())
 

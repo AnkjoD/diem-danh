@@ -241,11 +241,11 @@ const AuthPage = () => {
                 input: {endAdornment: (
                   <InputAdornment position="end">
                     <IconButton
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      onClick={() => setShowPassword(!showPassword)}
                       edge="end"
                       sx={{ color: '#fff' }}
                     >
-                      {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
                   </InputAdornment>
                 ),}
@@ -253,7 +253,7 @@ const AuthPage = () => {
             />
             <TextField
               {...registerForm.register('confirmPassword')}
-              type={showPassword ? 'text' : 'password'}
+              type={showConfirmPassword ? 'text' : 'password'}
               label="Xác nhận mật khẩu"
               error={!!registerForm.formState.errors.confirmPassword}
               helperText={registerForm.formState.errors.confirmPassword?.message}
@@ -261,11 +261,11 @@ const AuthPage = () => {
                 input:{endAdornment: (
                   <InputAdornment position="end">
                     <IconButton
-                      onClick={() => setShowPassword(!showPassword)}
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                       edge="end"
                       sx={{ color: '#fff' }}
                     >
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                      {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
                   </InputAdornment>
                 ),}
