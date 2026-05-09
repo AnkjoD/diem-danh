@@ -36,11 +36,23 @@ if "!db_name!"=="" set db_name=homura_db
 
 echo.
 echo --- Cau hinh Storage (MinIO) ---
-set /p minio_user="4. Nhap ten dang nhap MinIO (mac dinh: admin): "
+:ask_minio_user
+set /p minio_user="4. Nhap ten dang nhap MinIO (it nhat 3 ky tu, mac dinh: admin): "
 if "!minio_user!"=="" set minio_user=admin
+set "user_check=!minio_user:~2,1!"
+if "!user_check!"=="" (
+    echo [LOI] Ten dang nhap phai co it nhat 3 ky tu. Vui long nhap lai!
+    goto ask_minio_user
+)
 
+:ask_minio_pass
 set /p minio_pass="5. Nhap mat khau MinIO (it nhat 8 ky tu, mac dinh: password): "
 if "!minio_pass!"=="" set minio_pass=password
+set "pass_check=!minio_pass:~7,1!"
+if "!pass_check!"=="" (
+    echo [LOI] Mat khau phai co it nhat 8 ky tu theo yeu cau cua MinIO. Vui long nhap lai!
+    goto ask_minio_pass
+)
 
 :: Tao random JWT Secret qua powershell
 for /f "delims=" %%i in ('powershell -Command "[guid]::NewGuid().ToString().Replace('-', '')"') do set jwt_secret=%%i
@@ -94,8 +106,7 @@ if exist "ai\models\detector.onnx" goto check_docker
 
 echo Phat hien thieu AI Models!
 echo Dang tai xuong va giai nen tu dong (Am tham, mat vai phut tuy mang)...
-:: LUU Y: PHAI LA FILE ZIP, KHONG DUNG RAR! Link Dropbox dl=1 de tai truc tiep.
-powershell -WindowStyle Hidden -Command "$ErrorActionPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri 'https://www.dropbox.com/scl/fi/quulqjy2vqoapwovz1kd1/models.zip?rlkey=jv99r0i9lpwrglnfpkneclg9w&st=3wdofte3&dl=1' -OutFile 'models.zip' -UseBasicParsing; Expand-Archive -Path 'models.zip' -DestinationPath 'ai' -Force; Remove-Item 'models.zip'" >nul 2>&1
+powershell -WindowStyle Hidden -Command "$ErrorActionPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri 'https://www.dropbox.com/scl/fo/zthoyfvi73a2c21iomhiv/AGI8_iZlPSqZOUGXjzt7OwU?rlkey=q8edbm8wmnvfeez0dfep2u9hy&st=qsfzyjs5&dl=1' -OutFile 'models_tmp.zip' -UseBasicParsing; Expand-Archive -Path 'models_tmp.zip' -DestinationPath 'ai/models_tmp' -Force; if (!(Test-Path 'ai/models')) { New-Item -ItemType Directory -Path 'ai/models' | Out-Null }; Get-ChildItem -Path 'ai/models_tmp' -Recurse -File | Move-Item -Destination 'ai/models' -Force; Remove-Item 'models_tmp.zip' -Force; Remove-Item 'ai/models_tmp' -Recurse -Force" >nul 2>&1
 echo [OK] Tai AI Models hoan tat!
 
 :check_docker
