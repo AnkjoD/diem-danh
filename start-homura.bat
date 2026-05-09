@@ -111,7 +111,14 @@ if exist "ai\models\detector.onnx" goto check_docker
 
 echo Phat hien thieu AI Models!
 echo Dang tai xuong va giai nen (Co the mat 5-10 phut tuy mang, VUI LONG DOI)...
-powershell -Command "if (!(Test-Path 'ai\models.zip')) { Invoke-WebRequest -Uri 'https://www.dropbox.com/scl/fo/zthoyfvi73a2c21iomhiv/AGI8_iZlPSqZOUGXjzt7OwU?rlkey=q8edbm8wmnvfeez0dfep2u9hy^&st=qsfzyjs5^&dl=1' -OutFile 'ai\models.zip' -UseBasicParsing }; Expand-Archive -Path 'ai\models.zip' -DestinationPath 'ai\models_tmp' -Force; if (!(Test-Path 'ai\models')) { New-Item -ItemType Directory -Path 'ai\models' | Out-Null }; Get-ChildItem -Path 'ai\models_tmp' -Recurse -File | Move-Item -Destination 'ai\models' -Force; Remove-Item 'ai\models_tmp' -Recurse -Force"
+echo $ErrorActionPreference = 'Continue'; > download_models.ps1
+echo if (!(Test-Path 'ai\models.zip')) { Invoke-WebRequest -Uri 'https://www.dropbox.com/scl/fo/zthoyfvi73a2c21iomhiv/AGI8_iZlPSqZOUGXjzt7OwU?rlkey=q8edbm8wmnvfeez0dfep2u9hy^&st=qsfzyjs5^&dl=1' -OutFile 'ai\models.zip' -UseBasicParsing } >> download_models.ps1
+echo Expand-Archive -Path 'ai\models.zip' -DestinationPath 'ai\models_tmp' -Force >> download_models.ps1
+echo if (!(Test-Path 'ai\models')) { New-Item -ItemType Directory -Path 'ai\models' ^| Out-Null } >> download_models.ps1
+echo Get-ChildItem -Path 'ai\models_tmp' -Recurse -File ^| Move-Item -Destination 'ai\models' -Force >> download_models.ps1
+echo Remove-Item 'ai\models_tmp' -Recurse -Force >> download_models.ps1
+powershell -ExecutionPolicy Bypass -File download_models.ps1
+del download_models.ps1
 echo [OK] Tai AI Models hoan tat!
 
 :check_docker
