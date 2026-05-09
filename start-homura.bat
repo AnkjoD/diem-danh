@@ -107,19 +107,24 @@ echo.
 :check_models
 :: 2. Tai Models AI neu thieu
 echo [1] Kiem tra du lieu AI (Models)...
-if exist "ai\models\detector.onnx" goto check_docker
+if not exist "ai\models" mkdir "ai\models"
 
-echo Phat hien thieu AI Models!
-echo Dang tai xuong va giai nen (Co the mat 5-10 phut tuy mang, VUI LONG DOI)...
-echo $ErrorActionPreference = 'Continue'; > download_models.ps1
-echo if (!(Test-Path 'ai\models.zip')) { Invoke-WebRequest -Uri 'https://www.dropbox.com/scl/fo/zthoyfvi73a2c21iomhiv/AGI8_iZlPSqZOUGXjzt7OwU?rlkey=q8edbm8wmnvfeez0dfep2u9hy^&st=qsfzyjs5^&dl=1' -OutFile 'ai\models.zip' -UseBasicParsing } >> download_models.ps1
-echo Expand-Archive -Path 'ai\models.zip' -DestinationPath 'ai\models_tmp' -Force >> download_models.ps1
-echo if (!(Test-Path 'ai\models')) { New-Item -ItemType Directory -Path 'ai\models' ^| Out-Null } >> download_models.ps1
-echo Get-ChildItem -Path 'ai\models_tmp' -Recurse -File ^| Move-Item -Destination 'ai\models' -Force >> download_models.ps1
-echo Remove-Item 'ai\models_tmp' -Recurse -Force >> download_models.ps1
-powershell -ExecutionPolicy Bypass -File download_models.ps1
-del download_models.ps1
-echo [OK] Tai AI Models hoan tat!
+if not exist "ai\models\detector.onnx" (
+    echo.
+    echo [-] Phat hien thieu file: detector.onnx
+    echo Dang tai xuong tu Dropbox...
+    curl -L -o "ai\models\detector.onnx" "https://www.dropbox.com/scl/fi/c5vrrln7snt72jcezy6h6/detector.onnx?rlkey=64gpwtpkz2q3syzj868ueqqhw&st=gmrb3h46&dl=1"
+)
+
+if not exist "ai\models\recognizer.onnx" (
+    echo.
+    echo [-] Phat hien thieu file: recognizer.onnx
+    echo Dang tai xuong tu Dropbox (File nay nang khoang 174MB, vui long doi)...
+    curl -L -o "ai\models\recognizer.onnx" "https://www.dropbox.com/scl/fi/guye81erk3ga0gppals2i/recognizer.onnx?rlkey=75jpgce146bpe0wx5fc577adx&st=7tigb0zz&dl=1"
+)
+
+echo.
+echo [OK] Du lieu AI Models da hoan toan san sang!
 
 :check_docker
 :: 3. Kiem tra Docker
