@@ -12,7 +12,7 @@ echo.
 if exist ".env" goto check_models
 
 if exist ".env.backup" (
-    echo [KHOI PHUC] Khong tim thay file .env, dang khoi phuc tu ban sao luu (.env.backup)...
+    echo [KHOI PHUC] Khong tim thay file .env, dang khoi phuc tu ban sao luu tu dong...
     copy /Y ".env.backup" ".env" >nul
     copy /Y ".env" "backend\.env" >nul
     copy /Y ".env" "frontend\.env" >nul
