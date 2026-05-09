@@ -103,7 +103,7 @@ echo [OK] Tai AI Models hoan tat!
 echo.
 echo [2] Kiem tra trang thai Docker...
 docker info >nul 2>&1
-if %errorlevel% neq 0 (
+if ERRORLEVEL 1 (
     echo.
     echo [LOI] Docker chua duoc khoi dong hoac chua duoc cai dat! 
     echo Vui long mo ung dung "Docker Desktop" roi thu lai.

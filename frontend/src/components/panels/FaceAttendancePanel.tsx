@@ -719,8 +719,9 @@ const FaceAttendancePanel = () => {
       
       if (res.success && res.students) {
         // Cập nhật danh sách học sinh tích lũy
+        const students = res.students || [];
         setAccumulatedStudents(prev => {
-          const newOnes = res.students.filter(s => !prev.find(p => p.id === s.id));
+          const newOnes = students.filter(s => !prev.find(p => p.id === s.id));
           const updatedList = [...prev, ...newOnes];
           
           // Cập nhật UI tích điểm danh ngay lập tức
