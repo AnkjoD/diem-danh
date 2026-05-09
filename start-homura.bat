@@ -119,7 +119,7 @@ if not exist "ai\models\detector.onnx" (
 if not exist "ai\models\recognizer.onnx" (
     echo.
     echo [-] Phat hien thieu file: recognizer.onnx
-    echo Dang tai xuong tu Dropbox (File nay nang khoang 174MB, vui long doi)...
+    echo Dang tai xuong tu Dropbox - File nay nang khoang 174MB, vui long doi...
     curl -L -o "ai\models\recognizer.onnx" "https://www.dropbox.com/scl/fi/guye81erk3ga0gppals2i/recognizer.onnx?rlkey=75jpgce146bpe0wx5fc577adx&st=7tigb0zz&dl=1"
 )
 
