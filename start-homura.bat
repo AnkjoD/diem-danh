@@ -27,18 +27,22 @@ echo.
 echo --- Cau hinh Database (Postgres) ---
 set /p db_user="1. Nhap ten dang nhap Database (mac dinh: postgres): "
 if "!db_user!"=="" set db_user=postgres
+set db_user=!db_user: =!
 
 set /p db_pass="2. Nhap mat khau Database (mac dinh: 123456): "
 if "!db_pass!"=="" set db_pass=123456
+set db_pass=!db_pass: =!
 
 set /p db_name="3. Nhap ten Database (mac dinh: homura_db): "
 if "!db_name!"=="" set db_name=homura_db
+set db_name=!db_name: =!
 
 echo.
 echo --- Cau hinh Storage (MinIO) ---
 :ask_minio_user
 set /p minio_user="4. Nhap ten dang nhap MinIO (it nhat 3 ky tu, mac dinh: admin): "
 if "!minio_user!"=="" set minio_user=admin
+set minio_user=!minio_user: =!
 set "user_check=!minio_user:~2,1!"
 if "!user_check!"=="" (
     echo [LOI] Ten dang nhap phai co it nhat 3 ky tu. Vui long nhap lai!
@@ -48,6 +52,7 @@ if "!user_check!"=="" (
 :ask_minio_pass
 set /p minio_pass="5. Nhap mat khau MinIO (it nhat 8 ky tu, mac dinh: password): "
 if "!minio_pass!"=="" set minio_pass=password
+set minio_pass=!minio_pass: =!
 set "pass_check=!minio_pass:~7,1!"
 if "!pass_check!"=="" (
     echo [LOI] Mat khau phai co it nhat 8 ky tu theo yeu cau cua MinIO. Vui long nhap lai!
