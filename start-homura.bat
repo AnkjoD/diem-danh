@@ -59,6 +59,16 @@ if "!pass_check!"=="" (
     goto ask_minio_pass
 )
 
+echo.
+echo --- Cau hinh pgAdmin ---
+set /p pgadmin_email="6. Nhap Email dang nhap pgAdmin (mac dinh: admin@admin.com): "
+if "!pgadmin_email!"=="" set pgadmin_email=admin@admin.com
+set pgadmin_email=!pgadmin_email: =!
+
+set /p pgadmin_pass="7. Nhap mat khau pgAdmin (mac dinh: admin): "
+if "!pgadmin_pass!"=="" set pgadmin_pass=admin
+set pgadmin_pass=!pgadmin_pass: =!
+
 :: Tao random JWT Secret qua powershell
 for /f "delims=" %%i in ('powershell -Command "[guid]::NewGuid().ToString().Replace('-', '')"') do set jwt_secret=%%i
 
@@ -80,6 +90,10 @@ echo NEXT_PUBLIC_SERVER_URL=http://localhost:4000>> .env
 echo.>> .env
 echo # SECURITY>> .env
 echo JWT_SECRET=!jwt_secret!>> .env
+echo.>> .env
+echo # PGADMIN CONFIG>> .env
+echo PGADMIN_DEFAULT_EMAIL=!pgadmin_email!>> .env
+echo PGADMIN_DEFAULT_PASSWORD=!pgadmin_pass!>> .env
 
 :: Ghi vao backend\.env (Cac bien he thong)
 echo DB_HOST=postgres> backend\.env

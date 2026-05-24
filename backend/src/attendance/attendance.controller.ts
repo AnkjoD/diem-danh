@@ -3,6 +3,7 @@ import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { AttendanceService } from './attendance.service';
 import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
 import { Response } from 'express';
+import { Public } from '~/common/decorators/public.decorator';
 
 @ApiTags('Attendances')
 @ApiBearerAuth()
@@ -52,9 +53,10 @@ export class AttendanceController {
     return this.attendanceService.markAttendanceManual(body.session_id, body.student_id, body.status, teacher_id);
   }
 
+  @Public()
   @Post('recognize')
   @UseInterceptors(FilesInterceptor('files'))
-  @ApiOperation({ summary: 'Nhận diện khuôn mặt từ một hoặc nhiều ảnh' })
+  @ApiOperation({ summary: 'Nhận diện khuôn mặt từ một hoặc nhiều ảnh (Không yêu cầu đăng nhập)' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -67,13 +69,11 @@ export class AttendanceController {
   })
   recognizeFace(
     @Body('session_id') sessionId: string,
-    @UploadedFiles() files: Express.Multer.File[],
-    @Req() req: any,
+    @UploadedFiles() files: Express.Multer.File[]
   ) {
     if (!sessionId) throw new BadRequestException('session_id is required');
     if (!files || files.length === 0) throw new BadRequestException('files are required');
-    const teacher_id = req.user._id || req.user.id;
-    return this.attendanceService.recognizeFaces(sessionId, files, teacher_id);
+    return this.attendanceService.recognizeFaces(sessionId, files);
   }
 
   @Post('remove')

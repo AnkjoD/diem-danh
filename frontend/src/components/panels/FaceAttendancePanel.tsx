@@ -16,6 +16,7 @@ import QrCodeIcon from "@mui/icons-material/QrCode";
 import SmartphoneIcon from "@mui/icons-material/Smartphone";
 import { QRCodeCanvas } from "qrcode.react";
 import { getLocalIP } from "@/common/utils/network";
+import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Box,
@@ -98,6 +99,7 @@ const FaceAttendancePanel = () => {
 
   const queryClient = useQueryClient();
   const openConfirm = useConfirm();
+  const { token } = useAuth();
   const [recognized, setRecognized] = useState<Map<string, string>>(new Map());
   const [scanning, setScanning] = useState(false);
   const [searchAttTerm, setSearchAttTerm] = useState("");
@@ -181,8 +183,8 @@ const FaceAttendancePanel = () => {
     queryKey: ["today_session", selectedClass],
     queryFn: () => getTodaySession(selectedClass),
     enabled: !!selectedClass,
-    refetchInterval: 3000, 
-    placeholderData: (previousData) => previousData, 
+    refetchInterval: 3000,
+    placeholderData: (previousData) => previousData,
   });
 
   const updateSessionMut = useMutation({
@@ -358,12 +360,12 @@ const FaceAttendancePanel = () => {
             newStatusMap.set(a.student.id, a.status);
           }
         });
-        
+
         if (newStatusMap.size >= recognized.size) {
-           setRecognized(newStatusMap);
+          setRecognized(newStatusMap);
         }
       }
-    } 
+    }
     // CHỈ Reset khi KHÔNG load, KHÔNG fetch và thực sự KHÔNG có dữ liệu
     else if (!isLoadingTodaySession && !isFetchingTodaySession) {
       if (sessionId !== null) {
@@ -378,8 +380,7 @@ const FaceAttendancePanel = () => {
 
   // Giờ trễ < Giờ Kết thúc
   const validateTimes = (late: string, end: string) => {
-    if (!late && !end) return true; // Both empty -> OK
-    if (!late || !end) return false; // One missing -> NO
+    if (!late || !end) return true; // Một hoặc cả hai trống -> Hợp lệ
     const [lH, lM] = late.split(":").map(Number);
     const [eH, eM] = end.split(":").map(Number);
     const lateVal = lH * 60 + lM;
@@ -388,9 +389,7 @@ const FaceAttendancePanel = () => {
   };
 
   const getTimeError = (late: string, end: string) => {
-    if (!late && !end) return "";
-    if (late && !end) return "Cần nhập giờ kết thúc";
-    if (!late && end) return "Cần nhập giờ bắt đầu trễ";
+    if (!late || !end) return ""; // Không có lỗi nếu chỉ nhập một trong hai
     const [lH, lM] = late.split(":").map(Number);
     const [eH, eM] = end.split(":").map(Number);
     if (lH * 60 + lM >= eH * 60 + eM) return "Phải: Giờ Trễ < Giờ Kết Thúc";
@@ -426,17 +425,26 @@ const FaceAttendancePanel = () => {
     setEndThreshold(savedEnd);
     if (sessionId) {
       if (savedLate && savedEnd && !validateTimes(savedLate, savedEnd)) return;
-      const lDate = new Date();
-      const [lH, lM] = savedLate.split(":");
-      lDate.setHours(parseInt(lH), parseInt(lM), 0, 0);
+      
+      let lateIso = null;
+      if (savedLate) {
+        const lDate = new Date();
+        const [lH, lM] = savedLate.split(":");
+        lDate.setHours(parseInt(lH), parseInt(lM), 0, 0);
+        lateIso = lDate.toISOString();
+      }
 
-      const eDate = new Date();
-      const [eH, eM] = savedEnd.split(":");
-      eDate.setHours(parseInt(eH), parseInt(eM), 0, 0);
+      let endIso = null;
+      if (savedEnd) {
+        const eDate = new Date();
+        const [eH, eM] = savedEnd.split(":");
+        eDate.setHours(parseInt(eH), parseInt(eM), 0, 0);
+        endIso = eDate.toISOString();
+      }
 
       updateSessionMut.mutate({
-        late_threshold: savedLate ? lDate.toISOString() : null,
-        end_threshold: savedEnd ? eDate.toISOString() : null,
+        late_threshold: lateIso,
+        end_threshold: endIso,
       });
     }
   };
@@ -531,7 +539,7 @@ const FaceAttendancePanel = () => {
   };
 
   const handleOpenQr = async () => {
-    fetchServerIp();
+    await fetchServerIp(); // Wait for IP detection before opening dialog
 
     const vnTimeZone = "Asia/Ho_Chi_Minh";
     const todayStr = new Date().toLocaleDateString("sv-SE", {
@@ -541,7 +549,7 @@ const FaceAttendancePanel = () => {
     // Nếu qua ngày mới hoặc chưa có phiên -> Tự động tạo phiên mới và CHỜ (await)
     if (!sessionId || sessionDate !== todayStr) {
       try {
-        const sessionData = await createSession({ 
+        const sessionData = await createSession({
           class_id: selectedClass,
           late_threshold: lateThreshold ? (() => {
             const d = new Date();
@@ -602,7 +610,7 @@ const FaceAttendancePanel = () => {
 
     if (!sessionId || sessionDate !== todayStr) {
       try {
-        const sessionData = await createSession({ 
+        const sessionData = await createSession({
           class_id: selectedClass,
           late_threshold: lateThreshold ? (() => {
             const d = new Date();
@@ -661,7 +669,7 @@ const FaceAttendancePanel = () => {
 
     if (!currentSessionId || sessionDate !== todayStr) {
       try {
-        const sessionData = await createSession({ 
+        const sessionData = await createSession({
           class_id: selectedClass,
           late_threshold: lateThreshold ? (() => {
             const d = new Date();
@@ -698,7 +706,7 @@ const FaceAttendancePanel = () => {
     setScanResult(null);
     setAccumulatedStudents([]);
     setTotalFiles(filesToUpload.length);
-    
+
     // Bắt đầu xử lý ảnh đầu tiên trong hàng đợi
     setProcessingIndex(0);
     processQueueItem(0, currentSessionId, filesToUpload);
@@ -713,24 +721,24 @@ const FaceAttendancePanel = () => {
     }
 
     setProcessingIndex(index);
-    
+
     try {
       const res = await recognizeAttendanceFace(sId, [files[index]]);
-      
+
       if (res.success && res.students) {
         // Cập nhật danh sách học sinh tích lũy
         const students = res.students || [];
         setAccumulatedStudents(prev => {
           const newOnes = students.filter(s => !prev.find(p => p.id === s.id));
           const updatedList = [...prev, ...newOnes];
-          
+
           // Cập nhật UI tích điểm danh ngay lập tức
           const newStatusMap = new Map(recognized);
           updatedList.forEach((s) => {
             newStatusMap.set(s.id, "present");
           });
           setRecognized(newStatusMap);
-          
+
           setScanResult({ type: "success", students: updatedList });
           return updatedList;
         });
@@ -739,7 +747,7 @@ const FaceAttendancePanel = () => {
           queryKey: ["today_session", selectedClass],
         });
       }
-      
+
       // Chuyển sang ảnh tiếp theo sau một khoảng nghỉ ngắn để UI kịp cập nhật
       setTimeout(() => {
         processQueueItem(index + 1, sId, files);
@@ -769,7 +777,7 @@ const FaceAttendancePanel = () => {
     // Nếu không có phiên hoặc phiên đã qua ngày mới -> Tự động tạo phiên mới
     if (!currentSessionId || sessionDate !== todayStr) {
       try {
-        const sessionData = await createSession({ 
+        const sessionData = await createSession({
           class_id: selectedClass,
           late_threshold: lateThreshold ? (() => {
             const d = new Date();
@@ -1026,11 +1034,11 @@ const FaceAttendancePanel = () => {
             onClick={handleOpenQr}
             disabled={!selectedClass || classStudents.length === 0}
             sx={{
-              borderColor: "rgba(168,85,247,0.5)",
-              color: "#c084fc",
+              borderColor: "rgba(20,184,166,0.5)",
+              color: "#2dd4bf",
               "&:hover": {
-                borderColor: "#c084fc",
-                bgcolor: "rgba(168,85,247,0.05)",
+                borderColor: "#2dd4bf",
+                bgcolor: "rgba(20,184,166,0.05)",
               },
             }}
           >
@@ -1125,7 +1133,7 @@ const FaceAttendancePanel = () => {
                       transition: "transform 0.2s",
                       "&:hover": {
                         transform: "scale(1.05)",
-                        border: "1px solid #7c3aed",
+                        border: "1px solid #0d9488",
                       },
                     }}
                     onClick={() => setPreviewImageUrl(url)}
@@ -1195,6 +1203,10 @@ const FaceAttendancePanel = () => {
               onBlur={() => {
                 if (!sessionId) return;
                 if (isTimeInvalid) return;
+                if (!lateThreshold) {
+                  updateSessionMut.mutate({ late_threshold: null });
+                  return;
+                }
                 const thresholdDate = new Date();
                 const [hours, mins] = lateThreshold.split(":");
                 thresholdDate.setHours(parseInt(hours), parseInt(mins), 0, 0);
@@ -1223,6 +1235,10 @@ const FaceAttendancePanel = () => {
               onBlur={() => {
                 if (!sessionId) return;
                 if (isTimeInvalid) return;
+                if (!endThreshold) {
+                  updateSessionMut.mutate({ end_threshold: null });
+                  return;
+                }
                 const thresholdDate = new Date();
                 const [hours, mins] = endThreshold.split(":");
                 thresholdDate.setHours(parseInt(hours), parseInt(mins), 0, 0);
@@ -1320,8 +1336,8 @@ const FaceAttendancePanel = () => {
                   right: 0,
                   height: "2px",
                   background:
-                    "linear-gradient(to right, transparent, #c084fc, transparent)",
-                  boxShadow: "0 0 15px #c084fc",
+                    "linear-gradient(to right, transparent, #2dd4bf, transparent)",
+                  boxShadow: "0 0 15px #2dd4bf",
                   zIndex: 2,
                   animation: "scan-line 3s linear infinite",
                   "@keyframes scan-line": {
@@ -1348,9 +1364,9 @@ const FaceAttendancePanel = () => {
                     borderRadius: 8,
                     px: 3,
                     py: 1,
-                    bgcolor: "#6366f1",
+                    bgcolor: "#a855f7",
                     backgroundImage:
-                      "linear-gradient(135deg, #6366f1, #a855f7)",
+                      "linear-gradient(135deg, #a855f7, #e11d48)",
                     fontSize: "0.9rem",
                     fontWeight: "bold",
                     textTransform: "none",
@@ -1376,7 +1392,7 @@ const FaceAttendancePanel = () => {
                   bgcolor: "rgba(0,0,0,0.6)",
                   color: "white",
                   backdropFilter: "blur(4px)",
-                  "&:hover": { bgcolor: "rgba(168,85,247,0.8)" },
+                  "&:hover": { bgcolor: "rgba(20,184,166,0.8)" },
                   zIndex: 15,
                 }}
               >
@@ -1395,7 +1411,7 @@ const FaceAttendancePanel = () => {
               }}
             >
               <CameraAltIcon
-                sx={{ fontSize: 80, opacity: 0.1, mb: 2, color: "#c084fc" }}
+                sx={{ fontSize: 80, opacity: 0.1, mb: 2, color: "#2dd4bf" }}
               />
               <Typography
                 variant="h6"
@@ -1468,8 +1484,8 @@ const FaceAttendancePanel = () => {
                 right: 0,
                 height: "3px",
                 background:
-                  "linear-gradient(to right, transparent, #c084fc, transparent)",
-                boxShadow: "0 0 20px #c084fc",
+                  "linear-gradient(to right, transparent, #2dd4bf, transparent)",
+                boxShadow: "0 0 20px #2dd4bf",
                 animation: "scan-line 5s linear infinite",
                 zIndex: 5,
               }}
@@ -1495,8 +1511,8 @@ const FaceAttendancePanel = () => {
                   borderRadius: 10,
                   px: 6,
                   py: 2,
-                  bgcolor: "#6366f1",
-                  backgroundImage: "linear-gradient(135deg, #6366f1, #a855f7)",
+                  bgcolor: "#a855f7",
+                  backgroundImage: "linear-gradient(135deg, #a855f7, #e11d48)",
                   fontSize: "1.2rem",
                   fontWeight: "bold",
                   boxShadow: "0 10px 40px rgba(0,0,0,0.5)",
@@ -2010,13 +2026,13 @@ const FaceAttendancePanel = () => {
                   </Typography>
                 </Box>
               </Box>
-              
+
               <Typography variant="h6" color="primary" fontWeight="bold" gutterBottom>
                 Đang phân tích ảnh {processingIndex + 1}/{totalFiles}
               </Typography>
-              <LinearProgress 
-                variant="determinate" 
-                value={((processingIndex + 1) / totalFiles) * 100} 
+              <LinearProgress
+                variant="determinate"
+                value={((processingIndex + 1) / totalFiles) * 100}
                 sx={{ height: 8, borderRadius: 5, mt: 2, bgcolor: 'rgba(255,255,255,0.1)' }}
               />
               <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
@@ -2109,11 +2125,11 @@ const FaceAttendancePanel = () => {
                 <PremiumScrollContainer
                   component="box"
                   maxHeight="50vh"
-                  sx={{ 
+                  sx={{
                     pt: 1, px: 1, pb: 10, // Tăng pb để không bị nút che khuất
-                    width: "100%", 
-                    display: "flex", 
-                    flexDirection: "column", 
+                    width: "100%",
+                    display: "flex",
+                    flexDirection: "column",
                     alignItems: "center",
                     gap: 2.5,
                     // Hiệu ứng mờ ở đáy báo hiệu có thể cuộn tiếp
@@ -2350,6 +2366,8 @@ const FaceAttendancePanel = () => {
         <DialogContent sx={{ textAlign: "center", pb: 4 }}>
           {isMounted && (
             <>
+
+
               <Box
                 sx={{
                   p: 3,
@@ -2361,7 +2379,7 @@ const FaceAttendancePanel = () => {
                 }}
               >
                 <QRCodeCanvas
-                  value={`${window.location.protocol}//${serverIp || window.location.hostname}:3000/teacher/remote-capture?sessionId=${sessionId || ""}&classId=${selectedClass}`}
+                  value={`${window.location.protocol}//${manualIp || serverIp || window.location.hostname}:3000/teacher/remote-capture?sessionId=${sessionId || ""}&classId=${selectedClass}`}
                   size={240}
                   level="H"
                   includeMargin={true}

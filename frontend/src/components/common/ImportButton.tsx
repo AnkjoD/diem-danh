@@ -43,6 +43,7 @@ export const ImportButton: React.FC<ImportButtonProps> = ({
           hidden 
           accept={accept}
           multiple={multiple}
+          aria-label={label}
           onChange={handleChange}
         />
       </Button>

@@ -4,25 +4,49 @@ import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { 
   Box, Typography, Button, Container, Paper, Avatar, List, ListItem, 
-  ListItemAvatar, ListItemText, CircularProgress, Alert, IconButton, Divider
+  ListItemAvatar, ListItemText, CircularProgress, Alert, IconButton
 } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import { recognizeAttendanceFace } from '@/common/api/attendance';
 import { StudentData } from '@/common/interfaces/student';
 import { fixLocalUrl } from '@/common/utils/url';
+import axios from 'axios';
+
+// Tạo axios instance độc lập, không có interceptor auth
+// Điện thoại không cần token - chỉ cần sessionId hợp lệ
+const getPublicBaseURL = () => {
+  if (typeof window === 'undefined') return process.env.NEXT_PUBLIC_SERVER_URL;
+  const hostname = window.location.hostname;
+  if (hostname !== 'localhost' && hostname !== '127.0.0.1' && /^[0-9.]+$/.test(hostname)) {
+    return `${window.location.protocol}//${hostname}:4000`;
+  }
+  return process.env.NEXT_PUBLIC_SERVER_URL;
+};
+
+const publicHttp = axios.create({
+  baseURL: typeof window !== 'undefined' ? getPublicBaseURL() : process.env.NEXT_PUBLIC_SERVER_URL,
+  timeout: 300000,
+});
+
+// Unwrap response envelope { statusCode, data } nếu có
+publicHttp.interceptors.response.use((response) => {
+  if (response.data && typeof response.data === 'object' && 'statusCode' in response.data && 'data' in response.data) {
+    response.data = response.data.data;
+  }
+  return response;
+});
 
 const RemoteCaptureContent = () => {
   const searchParams = useSearchParams();
   const router = useRouter();
   const sessionIdFromParams = searchParams.get('sessionId');
   const classId = searchParams.get('classId');
-  const token = searchParams.get('token');
   
   const [sessionId, setSessionId] = useState<string | null>(sessionIdFromParams);
   const [isMounted, setIsMounted] = useState(false);
   const [isValidSession, setIsValidSession] = useState<boolean | null>(null);
+  const [invalidReason, setInvalidReason] = useState<string>('');
   const [isMobile, setIsMobile] = useState<boolean | null>(null);
 
   const [uploading, setUploading] = useState(false);
@@ -41,30 +65,25 @@ const RemoteCaptureContent = () => {
     const mobileRegex = /android|iphone|ipad|ipod|blackberry|iemobile|opera mini/i;
     setIsMobile(mobileRegex.test(userAgent));
 
-    if (token) {
-      localStorage.setItem('accessToken', token);
-      // Clean up URL to hide token
-      const url = new URL(window.location.href);
-      url.searchParams.delete('token');
-      window.history.replaceState({}, '', url.toString());
-    }
-
     const verifySession = async () => {
       if (!sessionIdFromParams) {
         setIsValidSession(false);
         return;
       }
       try {
-        const { default: http } = await import('@/common/utils/http');
-        const { data } = await http.get(`/sessions/verify/${sessionIdFromParams}`);
+        // Dùng publicHttp (không có interceptor auth) để không bị redirect login
+        const baseURL = getPublicBaseURL();
+        const { data } = await publicHttp.get(`/sessions/verify/${sessionIdFromParams}`, { baseURL });
         setIsValidSession(data.valid === true);
+        if (!data.valid) setInvalidReason(data.reason || 'unknown');
       } catch (err) {
         setIsValidSession(false);
+        setInvalidReason('error');
       }
     };
 
     verifySession();
-  }, [token, sessionIdFromParams]);
+  }, [sessionIdFromParams]);
 
   if (!isMounted || isValidSession === null || isMobile === null) return (
     <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', bgcolor: '#0a0a0b' }}>
@@ -94,17 +113,27 @@ const RemoteCaptureContent = () => {
     );
   }
 
-  // Nếu phiên không hợp lệ, hiện trang 404 "tàng hình"
+  // Phiên không hợp lệ
   if (isValidSession === false) {
+    const isExpired = invalidReason === 'expired';
+    const isEnded = invalidReason === 'ended';
     return (
       <Box sx={{ 
         height: '100vh', bgcolor: '#0a0a0b', color: '#fff', 
-        display: 'flex', flexDirection: 'column', justifyContent: 'center', textAlign: 'center', px: 4 
+        display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', px: 4 
       }}>
-        <Typography variant="h1" fontWeight="bold" sx={{ opacity: 0.1, fontSize: '8rem', mb: -2 }}>404</Typography>
-        <Typography variant="h5" fontWeight="bold" gutterBottom>Trang không tồn tại</Typography>
-        <Typography variant="body2" sx={{ opacity: 0.5 }}>
-          Đường dẫn bạn truy cập không hợp lệ hoặc phiên điểm danh đã kết thúc.
+        <Typography variant="h1" fontWeight="bold" sx={{ opacity: 0.1, fontSize: '8rem', mb: -2 }}>
+          {isExpired ? '⏰' : isEnded ? '🚫' : '404'}
+        </Typography>
+        <Typography variant="h5" fontWeight="bold" gutterBottom>
+          {isExpired ? 'Mã QR đã hết hạn' : isEnded ? 'Phiên điểm danh đã kết thúc' : 'Trang không tồn tại'}
+        </Typography>
+        <Typography variant="body2" sx={{ opacity: 0.5, maxWidth: 300 }}>
+          {isExpired 
+            ? 'Mã QR này thuộc phiên hôm qua. Giáo viên cần bấm lại "Điểm danh qua Phone" để tạo QR mới cho hôm nay.' 
+            : isEnded 
+            ? 'Giờ điểm danh đã kết thúc. Vui lòng liên hệ giáo viên nếu bạn cần điểm danh thủ công.'
+            : 'Đường dẫn không hợp lệ hoặc phiên điểm danh đã kết thúc.'}
         </Typography>
       </Box>
     );
@@ -131,36 +160,35 @@ const RemoteCaptureContent = () => {
     setCapturedPhoto(null);
 
     try {
-      let currentSessionId = sessionId;
-      
-      if (!currentSessionId && classId) {
-        const { createSession } = await import('@/common/api/session');
-        const session = await createSession({ class_id: classId });
-        currentSessionId = session.id;
-        setSessionId(currentSessionId);
-      }
-
-      if (!currentSessionId) {
-        setError('Không tìm thấy phiên điểm danh hoặc mã lớp.');
+      if (!sessionId) {
+        setError('Không tìm thấy phiên điểm danh. Vui lòng quét lại mã QR.');
         setUploading(false);
         return;
       }
 
-      const fileNames = selectedFiles.map(f => f.name);
-      const response = await recognizeAttendanceFace(currentSessionId, selectedFiles);
+      // Gửi ảnh bằng publicHttp (không cần token)
+      const baseURL = getPublicBaseURL();
+      const formData = new FormData();
+      formData.append('session_id', sessionId);
+      selectedFiles.forEach(file => formData.append('files', file));
+
+      const { data: response } = await publicHttp.post('/attendances/recognize', formData, {
+        baseURL,
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       
       if (response.success) {
         setResults(response.students || []);
-        setSuccess(`Điểm danh ${response.students?.length || 0} sinh viên thành công!`);
-        if ((response as any).photoUrl) setCapturedPhoto(fixLocalUrl((response as any).photoUrl as string) || null);
-        // Xóa ảnh đã xử lý sau khi thành công
+        setSuccess(`✓ Điểm danh thành công ${response.students?.length || 0} sinh viên!`);
+        if (response.photoUrl) setCapturedPhoto(fixLocalUrl(response.photoUrl as string) || null);
         setSelectedFiles([]);
         setPreviews([]);
       } else {
         setError(response.message || 'Không nhận diện được khuôn mặt nào.');
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Có lỗi xảy ra khi xử lý ảnh.');
+      const errorMsg = err.response?.data?.message || err.message || 'Có lỗi xảy ra khi xử lý ảnh.';
+      setError(errorMsg);
     } finally {
       setUploading(false);
     }
@@ -168,14 +196,14 @@ const RemoteCaptureContent = () => {
 
   if (!sessionId && !classId) {
     return (
-      <Container maxWidth="xs" sx={{ height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', textAlign: 'center', bgcolor: '#0a0a0b' }}>
+      <Container maxWidth="xs" sx={{ height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', textAlign: 'center', bgcolor: '#12091a' }}>
         <Alert severity="warning" variant="filled" sx={{ borderRadius: 4 }}>Thiếu thông tin lớp học hoặc phiên điểm danh.</Alert>
       </Container>
     );
   }
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#0a0a0b', color: '#fff', pb: 8 }}>
+    <Box sx={{ minHeight: '100vh', bgcolor: '#12091a', color: '#fff', pb: 8 }}>
       {/* Premium Header */}
       <Box sx={{ 
         py: 3, px: 2, textAlign: 'center', 
@@ -183,7 +211,7 @@ const RemoteCaptureContent = () => {
         borderBottom: '1px solid rgba(168,85,247,0.1)'
       }}>
         <Typography variant="h6" fontFamily='"Cinzel", serif' sx={{
-          background: 'linear-gradient(135deg, #c084fc, #fb7185)',
+          background: 'linear-gradient(135deg, #a855f7, #fb7185)',
           backgroundClip: 'text', WebkitBackgroundClip: 'text', color: 'transparent',
           fontWeight: 900, letterSpacing: 4, mb: 0.5
         }}>
@@ -220,9 +248,9 @@ const RemoteCaptureContent = () => {
             sx={{ 
               py: 2.5, 
               borderRadius: 4, 
-              bgcolor: '#6366f1', 
-              backgroundImage: 'linear-gradient(135deg, #6366f1, #a855f7)',
-              '&:hover': { bgcolor: '#4f46e5', boxShadow: '0 0 20px rgba(99,102,241,0.4)' },
+              bgcolor: '#a855f7', 
+              backgroundImage: 'linear-gradient(135deg, #a855f7, #e11d48)',
+              '&:hover': { bg: 'linear-gradient(135deg, #c084fc, #fb7185)', boxShadow: '0 0 20px rgba(168,85,247,0.4)' },
               fontSize: '1.1rem',
               fontWeight: 'bold',
               textTransform: 'none'
@@ -234,6 +262,7 @@ const RemoteCaptureContent = () => {
               hidden
               multiple
               accept="image/*"
+              aria-label="Chọn ảnh để điểm danh"
               onChange={handleFileChange}
             />
           </Button>
@@ -244,7 +273,7 @@ const RemoteCaptureContent = () => {
               <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, mb: 2 }}>
                 {previews.map((src, i) => (
                   <Box key={i} sx={{ position: 'relative', borderRadius: 2, overflow: 'hidden', aspectRatio: '1', border: '1px solid rgba(168,85,247,0.3)' }}>
-                    <img src={src} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <img src={src} alt="Xem trước ảnh chụp" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     <IconButton
                       size="small"
                       onClick={() => {
@@ -277,7 +306,13 @@ const RemoteCaptureContent = () => {
             </Box>
           )}
 
-          {error && <Alert severity="error" sx={{ mt: 3, borderRadius: 3, bgcolor: 'rgba(244,67,54,0.1)', color: '#ff8a80', border: '1px solid rgba(244,67,54,0.3)' }}>{error}</Alert>}
+          {error && (
+            <Alert severity="error" sx={{ mt: 3, borderRadius: 3, bgcolor: 'rgba(244,67,54,0.1)', color: '#ff8a80', border: '1px solid rgba(244,67,54,0.3)', textAlign: 'left' }}>
+              <Typography variant="body2" sx={{ wordBreak: 'break-word', fontSize: '0.9rem' }}>
+                {error}
+              </Typography>
+            </Alert>
+          )}
           {success && <Alert severity="success" sx={{ mt: 3, borderRadius: 3, bgcolor: 'rgba(76,175,80,0.1)', color: '#81c784', border: '1px solid rgba(76,175,80,0.3)' }}>{success}</Alert>}
         </Paper>
 
@@ -341,7 +376,7 @@ const RemoteCaptureContent = () => {
 
 export default function RemoteCapturePage() {
   return (
-    <Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', bgcolor: '#0a0a0b' }}><CircularProgress /></Box>}>
+    <Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', bgcolor: '#12091a' }}><CircularProgress /></Box>}>
       <RemoteCaptureContent />
     </Suspense>
   );

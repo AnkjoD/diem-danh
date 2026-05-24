@@ -171,14 +171,19 @@ export class SessionService {
   }
   async verify(id: string) {
     const session = await this.sessionRepo.findOne({ where: { id } });
-    if (!session) return { valid: false };
+    if (!session) return { valid: false, reason: 'not_found' };
 
     const now = new Date();
+    const vnTimeZone = 'Asia/Ho_Chi_Minh';
+    const todayStr = now.toLocaleDateString('sv-SE', { timeZone: vnTimeZone });
+    const sessionDateStr = new Date(session.created_at).toLocaleDateString('sv-SE', { timeZone: vnTimeZone });
 
-    // Chỉ vô hiệu hóa khi đã qua end_threshold (giờ kết thúc),
-    // không vô hiệu hóa chỉ vì qua ngày (học sinh vẫn có thể nộp ảnh muộn)
+    // Phiên đã qua ngày → QR cũ, cần quét QR mới
+    if (sessionDateStr !== todayStr) return { valid: false, reason: 'expired' };
+
+    // Đã qua giờ kết thúc điểm danh
     if (session.end_threshold && now > new Date(session.end_threshold)) {
-      return { valid: false };
+      return { valid: false, reason: 'ended' };
     }
 
     return { valid: true };

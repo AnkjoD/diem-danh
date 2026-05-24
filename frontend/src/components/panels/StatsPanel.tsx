@@ -577,7 +577,7 @@ const StatsPanel = () => {
               display: 'inline-block', 
               borderRadius: 4, 
               overflow: 'hidden', 
-              border: '2px solid rgba(168, 85, 247, 0.3)',
+              border: '2px solid rgba(20, 184, 166, 0.3)',
               boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
               bgcolor: '#000'
             }}>
@@ -606,7 +606,7 @@ const StatsPanel = () => {
                     width={previewImage.training_metadata.bbox[2] - previewImage.training_metadata.bbox[0]}
                     height={previewImage.training_metadata.bbox[3] - previewImage.training_metadata.bbox[1]}
                     fill="none"
-                    stroke="#c084fc"
+                    stroke="#2dd4bf"
                     strokeWidth="4"
                   />
                 </svg>

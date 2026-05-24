@@ -48,9 +48,9 @@ const AuthPage = () => {
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
-  
+
   const { user, loading, login: contextLogin, register: contextRegister } = useAuth();
-  
+
   useEffect(() => {
     if (!loading && user) {
       router.push('/dashboard');
@@ -88,10 +88,10 @@ const AuthPage = () => {
     setSuccess('');
     setSubmitting(true);
     try {
-      await contextRegister({ 
-        full_name: data.email.split('@')[0], 
-        email: data.email, 
-        password: data.password 
+      await contextRegister({
+        full_name: data.email.split('@')[0],
+        email: data.email,
+        password: data.password
       });
       setSuccess("Đăng ký thành công!");
     } catch (error: any) {
@@ -116,11 +116,11 @@ const AuthPage = () => {
 
   if (loading) {
     return (
-      <Box sx={{ 
-        display: 'flex', 
-        height: '100vh', 
-        alignItems: 'center', 
-        justifyContent: 'center' 
+      <Box sx={{
+        display: 'flex',
+        height: '100vh',
+        alignItems: 'center',
+        justifyContent: 'center'
       }}>
         <CircularProgress color="primary" />
       </Box>
@@ -144,7 +144,7 @@ const AuthPage = () => {
           <>
             <LockOutlinedIcon sx={{ fontSize: 48, color: 'primary.main', mb: 1 }} />
             <Typography variant="h4" fontFamily='"Cinzel", serif' sx={{
-              background: 'linear-gradient(135deg, #c084fc, #fb7185)',
+              background: 'linear-gradient(135deg, #2dd4bf, #fb7185)',
               backgroundClip: 'text',
               WebkitBackgroundClip: 'text',
               color: 'transparent',
@@ -159,7 +159,7 @@ const AuthPage = () => {
           <>
             <HowToRegOutlinedIcon sx={{ fontSize: 48, color: 'primary.main', mb: 1 }} />
             <Typography variant="h4" fontFamily='"Cinzel", serif' sx={{
-              background: 'linear-gradient(135deg, #c084fc, #fb7185)',
+              background: 'linear-gradient(135deg, #2dd4bf, #fb7185)',
               backgroundClip: 'text',
               WebkitBackgroundClip: 'text',
               color: 'transparent',
@@ -183,6 +183,7 @@ const AuthPage = () => {
               {...loginForm.register('email')}
               type="email"
               label="Email"
+              placeholder="Nhập email của bạn"
               error={!!loginForm.formState.errors.email}
               helperText={loginForm.formState.errors.email?.message}
               fullWidth
@@ -191,21 +192,24 @@ const AuthPage = () => {
               {...loginForm.register('password')}
               type={showPassword ? 'text' : 'password'}
               label="Mật khẩu"
+              placeholder="Nhập mật khẩu"
               error={!!loginForm.formState.errors.password}
               helperText={loginForm.formState.errors.password?.message}
               fullWidth
               slotProps={{
-                input:{endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      onClick={() => setShowPassword(!showPassword)}
-                      edge="end"
-                      sx={{ color: '#fff' }}
-                    >
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  </InputAdornment>
-                ),}
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        onClick={() => setShowPassword(!showPassword)}
+                        edge="end"
+                        sx={{ color: '#fff' }}
+                      >
+                        {showPassword ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }
               }}
             />
             <Button type="submit" variant="contained" size="large" disabled={submitting} fullWidth sx={{ mt: 1 }}>
@@ -226,6 +230,7 @@ const AuthPage = () => {
               {...registerForm.register('email')}
               type="email"
               label="Email"
+              placeholder="Nhập email của bạn"
               error={!!registerForm.formState.errors.email}
               helperText={registerForm.formState.errors.email?.message}
               fullWidth
@@ -234,41 +239,47 @@ const AuthPage = () => {
               {...registerForm.register('password')}
               type={showPassword ? 'text' : 'password'}
               label="Mật khẩu"
+              placeholder="Nhập mật khẩu"
               error={!!registerForm.formState.errors.password}
               helperText={registerForm.formState.errors.password?.message}
               fullWidth
               slotProps={{
-                input: {endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      onClick={() => setShowPassword(!showPassword)}
-                      edge="end"
-                      sx={{ color: '#fff' }}
-                    >
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  </InputAdornment>
-                ),}
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        onClick={() => setShowPassword(!showPassword)}
+                        edge="end"
+                        sx={{ color: '#fff' }}
+                      >
+                        {showPassword ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }
               }}
             />
             <TextField
               {...registerForm.register('confirmPassword')}
               type={showConfirmPassword ? 'text' : 'password'}
               label="Xác nhận mật khẩu"
+              placeholder="Nhập lại mật khẩu"
               error={!!registerForm.formState.errors.confirmPassword}
               helperText={registerForm.formState.errors.confirmPassword?.message}
               slotProps={{
-                input:{endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      edge="end"
-                      sx={{ color: '#fff' }}
-                    >
-                      {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  </InputAdornment>
-                ),}
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        edge="end"
+                        sx={{ color: '#fff' }}
+                      >
+                        {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }
               }}
               fullWidth
             />

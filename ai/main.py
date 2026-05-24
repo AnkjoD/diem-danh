@@ -48,21 +48,63 @@ async def process_upload(file: UploadFile) -> np.ndarray:
   
     return img
 
+def pre_resize_for_detection(image: np.ndarray, max_side: int = 1280) -> np.ndarray:
+    """
+    Pre-resize ảnh lớn xuống max_side trước khi đưa vào detector.
+    Giữ nguyên tỉ lệ. Model ONNX vẫn chạy ở 640x640 cố định.
+    Điều này giúp mặt người trong ảnh chụp cả lớp từ điện thoại 
+    không bị quá nhỏ sau bước resize 640x640 bên trong detector.
+    """
+    h, w = image.shape[:2]
+    current_max = max(h, w)
+    if current_max <= max_side:
+        return image
+    scale = max_side / current_max
+    new_w = int(w * scale)
+    new_h = int(h * scale)
+    print(f"[PRE-RESIZE] {w}x{h} -> {new_w}x{new_h} (scale={scale:.3f})")
+    return cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+
 def get_face_data(image: np.ndarray, mode: Literal["register", "recognize"] = "recognize"):
-    detection_result = detector.detect(image, thresh=0.5, input_size=(640, 640))
-    
+    h_orig, w_orig = image.shape[:2]
+    print(f"[get_face_data] mode={mode}, original_size={w_orig}x{h_orig}")
+
+    scale = 1.0
+    if mode == "recognize":
+        # Pre-resize ảnh xuống tối đa 1280px để mặt không quá nhỏ
+        # Sau đó detector resize xuống 640x640 cứng -> mặt giữ được tỉ lệ tốt hơn
+        current_max = max(h_orig, w_orig)
+        if current_max > 1280:
+            scale = 1280.0 / current_max
+            new_w = int(w_orig * scale)
+            new_h = int(h_orig * scale)
+            print(f"[PRE-RESIZE] {w_orig}x{h_orig} -> {new_w}x{new_h} (scale={scale:.3f})")
+            image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        thresh = 0.4
+    else:
+        thresh = 0.5
+
+    detection_result = detector.detect(image, thresh=thresh, input_size=(640, 640))
+
     if not isinstance(detection_result, (tuple, list)) or len(detection_result) < 2:
+        print(f"[get_face_data] detector returned invalid result")
         return None
-    
+
     det, landmarks = detection_result[0], detection_result[1]
-    
+
     if det is None or det.shape[0] == 0 or landmarks is None:
+        print(f"[get_face_data] No faces detected (det={det})")
         return None
-        
+
+    print(f"[get_face_data] Detected {det.shape[0]} face(s)")
+
     if mode == "recognize":
         results = []
         for i in range(len(landmarks)):
             bbox = det[i, 0:4].tolist()
+            if scale != 1.0:
+                bbox = [coord / scale for coord in bbox]
             aligned_face = aligner.align(image, landmarks[i])
             embedding = recognizer.recognize(aligned_face)
             results.append({"embedding": embedding, "bbox": bbox})
@@ -72,25 +114,30 @@ def get_face_data(image: np.ndarray, mode: Literal["register", "recognize"] = "r
         bboxes = det[:, 0:4]
         areas = (bboxes[:, 2] - bboxes[:, 0]) * (bboxes[:, 3] - bboxes[:, 1])
         max_area_idx = np.argmax(areas)
-        
-        aligned_face = aligner.align(image, landmarks[max_area_idx])   
+        aligned_face = aligner.align(image, landmarks[max_area_idx])
         embedding = recognizer.recognize(aligned_face)
         bbox = bboxes[max_area_idx].tolist()
+        if scale != 1.0:
+            bbox = [coord / scale for coord in bbox]
         return {"embedding": embedding, "bbox": bbox}
 
 @app.post("/recognize", response_model=RecognizeResponse)
 async def recognize(file: UploadFile = File(...)):
+    print(f"[/recognize] Received file: {file.filename}, size hint: {file.size}")
     img = await process_upload(file)
     results = get_face_data(img, "recognize")
     
     if results is None or len(results) == 0:
+        print(f"[/recognize] No faces detected -> returning failed")
         return RecognizeResponse(status="failed", message="No face detected")
     
+    print(f"[/recognize] {len(results)} face(s) detected, running FAISS match (DB size: {matcher.index.ntotal})...")
     student_ids = []
     bboxes = []
     distances = []
-    for res in results:
+    for i, res in enumerate(results):
         student_id, distance = matcher.search_face(res["embedding"], threshold=1.2)
+        print(f"[/recognize] Face #{i+1}: matched={student_id}, distance={distance:.4f}")
         if student_id and distance:
             student_ids.append(student_id)
             bboxes.append(res["bbox"])
@@ -119,6 +166,10 @@ async def register(student_id: str = Form(...), file: UploadFile = File(...)):
     return RegisterResponse(status="success", message=f"Registered {student_id}", embedding=embedding.tolist())
 
 # Thêm cái này vào cùng chỗ với các API /recognize và /register
+@app.get("/students")
+async def get_registered_students():
+    return {"student_ids": matcher.id_mapping}
+
 @app.delete("/delete/{student_id}")
 async def delete_student_face(student_id: str):
     success = matcher.delete_face(student_id)

@@ -107,7 +107,7 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({ student, open, onCl
             <Box sx={{ display: 'flex', gap: 2, mb: 1 }}>
               <Button component="label" variant={file && !useCamera ? "contained" : "outlined"} startIcon={<CloudUploadIcon />} color="primary">
                 Tải File Lên
-                <input type="file" accept="image/*" hidden onChange={(e) => { setFile(e.target.files?.[0] || null); stopCamera(); }} />
+                <input type="file" accept="image/*" hidden aria-label="Tải ảnh lên" onChange={(e) => { setFile(e.target.files?.[0] || null); stopCamera(); }} />
               </Button>
               
               {!useCamera ? (

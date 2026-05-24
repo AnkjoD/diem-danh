@@ -97,6 +97,8 @@ services:
         condition: service_healthy
     environment:
       - TZ=Asia/Ho_Chi_Minh
+    volumes:
+      - ./ai/databases:/app/databases
     networks:
       - homura_network
     restart: always

@@ -36,7 +36,7 @@ export default function ConfirmDialog({
   return (
     <Dialog open={open} onClose={onCancel} PaperProps={{
       sx: {
-        background: 'linear-gradient(to bottom, #2a0a4a, #1a0532)',
+        background: 'linear-gradient(to bottom, #1a0e24, #0f0718)',
         border: '1px solid rgba(168, 85, 247, 0.4)',
         boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
         borderRadius: 4,
@@ -62,6 +62,7 @@ export default function ConfirmDialog({
                 <Checkbox 
                   checked={archive} 
                   onChange={(e) => setArchive(e.target.checked)}
+                  inputProps={{ 'aria-label': archiveLabel }} // aria-label added here
                   sx={{ color: 'primary.light', '&.Mui-checked': { color: 'primary.light' } }}
                 />
               }

@@ -28,9 +28,9 @@ export class AttendanceService {
   /**
    * Nhận diện đồng thời từ nhiều ảnh
    */
-  async recognizeFaces(sessionId: string, files: Express.Multer.File[], teacherId: string) {
+  async recognizeFaces(sessionId: string, files: Express.Multer.File[]) {
     const session = await this.sessionRepo.findOne({
-      where: { id: sessionId, classData: { teacher_id: teacherId } },
+      where: { id: sessionId },
       relations: ['classData']
     });
 
@@ -57,6 +57,7 @@ export class AttendanceService {
     // Miễn là trong cùng một ngày, giảng viên có thể điểm danh bao lâu tùy ý.
 
     const allRecognizedStudents: any[] = [];
+    let totalMatchedButNotEnrolled = 0;
     const aggregatedResults = {
       success: false,
       message: '',
@@ -71,6 +72,9 @@ export class AttendanceService {
           aggregatedResults.success = true;
           allRecognizedStudents.push(...result.students);
         }
+        if (result.matchedButNotEnrolled) {
+          totalMatchedButNotEnrolled += result.matchedButNotEnrolled;
+        }
       } catch (e) {
         console.error('Error processing file:', e);
       }
@@ -79,18 +83,35 @@ export class AttendanceService {
 
     const uniqueStudents = Array.from(new Map(allRecognizedStudents.map(s => [s.id, s])).values());
     aggregatedResults.students = uniqueStudents as any;
-    aggregatedResults.message = aggregatedResults.success 
-      ? `Đã xử lý ${files.length} ảnh. Nhận diện được ${uniqueStudents.length} sinh viên.`
-      : 'Không tìm thấy khuôn mặt nào khớp trong các ảnh đã tải lên.';
+    
+    if (aggregatedResults.success) {
+      aggregatedResults.message = `Đã xử lý ${files.length} ảnh. Nhận diện được ${uniqueStudents.length} sinh viên thuộc lớp này.`;
+      if (totalMatchedButNotEnrolled > 0) {
+        aggregatedResults.message += ` (Có ${totalMatchedButNotEnrolled} khuôn mặt đúng nhưng sinh viên không thuộc lớp này nên bị bỏ qua)`;
+      }
+    } else {
+      if (totalMatchedButNotEnrolled > 0) {
+        aggregatedResults.message = `AI có nhận diện được ${totalMatchedButNotEnrolled} khuôn mặt, NHƯNG các sinh viên này KHÔNG CÓ TÊN TRONG LỚP nên bị từ chối điểm danh! (Vui lòng thêm sinh viên vào lớp trước)`;
+      } else {
+        aggregatedResults.message = 'Không tìm thấy khuôn mặt nào khớp trong các ảnh đã tải lên.';
+      }
+    }
 
     return aggregatedResults;
   }
 
   private async processSingleFile(session: Session, file: Express.Multer.File) {
-    const aiResponse: any = await this.aiService.recognizeFace(file.buffer, file.originalname);
+    let processedBuffer = file.buffer;
+    try {
+      processedBuffer = await sharp(file.buffer).rotate().toBuffer();
+    } catch (e) {
+      console.error('[ROTATION] Failed to auto-rotate image buffer with sharp:', e);
+    }
+
+    const aiResponse: any = await this.aiService.recognizeFace(processedBuffer, file.originalname);
     
     if (!aiResponse.student_ids || aiResponse.student_ids.length === 0) {
-      return { success: false, students: [] };
+      return { success: false, students: [], matchedButNotEnrolled: 0 };
     }
 
     // 1. TẢI ẢNH GỐC (RAW) LÊN MINIO - Duy nhất 1 tấm để tiết kiệm bộ nhớ
@@ -101,7 +122,7 @@ export class AttendanceService {
     // Lấy kích thước ảnh gốc để frontend vẽ ô vuông chính xác
     let imgMetadata = { width: 0, height: 0 };
     try {
-      const meta = await sharp(file.buffer).metadata();
+      const meta = await sharp(processedBuffer).metadata();
       imgMetadata.width = meta.width || 0;
       imgMetadata.height = meta.height || 0;
     } catch (e) {
@@ -109,7 +130,7 @@ export class AttendanceService {
     }
 
     const photoUrl = await this.minioService.uploadFile(
-      file.buffer, 
+      processedBuffer, 
       rawFileName, 
       file.mimetype, 
       this.minioService.buckets.frames
@@ -118,16 +139,29 @@ export class AttendanceService {
     const studentIds = aiResponse.student_ids as string[];
     const recognizedStudents: any[] = [];
 
+    console.log(`[RECOGNIZE] Class ID being checked: ${session.classData.id}`);
+    console.log(`[RECOGNIZE] AI returned student IDs: ${JSON.stringify(studentIds)}`);
+    console.log(`[RECOGNIZE] AI distances: ${JSON.stringify(aiResponse.distances)}`);
+
+    let matchedButNotEnrolled = 0;
+
     for (let i = 0; i < studentIds.length; i++) {
       const studentId = studentIds[i];
       const bbox = aiResponse.bboxes ? aiResponse.bboxes[i] : null;
+
+      console.log(`[RECOGNIZE] Checking enrollment: student=${studentId} in class=${session.classData.id}`);
 
       const isEnrolled = await this.classStudentRepo.findOne({
         where: { classEntity: { id: session.classData.id }, student: { id: studentId } },
         relations: ['student']
       });
 
-      if (!isEnrolled) continue;
+      console.log(`[RECOGNIZE] Enrollment result: ${isEnrolled ? `FOUND (student: ${isEnrolled.student?.name})` : 'NOT FOUND'}`);
+
+      if (!isEnrolled) {
+        matchedButNotEnrolled++;
+        continue;
+      }
 
       let record = await this.attendanceRepo.findOne({
         where: { session: { id: session.id }, student: { id: studentId } },
@@ -173,6 +207,7 @@ export class AttendanceService {
     return { 
       success: recognizedStudents.length > 0, 
       students: recognizedStudents,
+      matchedButNotEnrolled,
       photoUrl: photoUrl,
       bboxes: aiResponse.bboxes,
       imgWidth: imgMetadata.width,

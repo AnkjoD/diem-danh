@@ -44,7 +44,7 @@ export default function DashboardLayout({
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Box sx={{ p: 2, textAlign: 'center' }}>
         <Typography variant="h6" fontFamily='"Cinzel", serif' sx={{
-          background: 'linear-gradient(135deg, #c084fc, #fb7185)',
+          background: 'linear-gradient(135deg, #a855f7, #fb7185)',
           backgroundClip: 'text', WebkitBackgroundClip: 'text', color: 'transparent',
           fontSize: '1rem', fontWeight: 900, letterSpacing: 2
         }}>

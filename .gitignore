@@ -29,3 +29,6 @@ Thumbs.db
 *.spec.ts  
 scratch/  
 test/  
+ai/models.zip 
+test_dl.ps1 
+.env.backup 

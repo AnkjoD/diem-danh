@@ -144,7 +144,9 @@ http.interceptors.response.use(
 
         if (typeof window !== "undefined") {
           const isLoginPage = window.location.pathname === "/auth";
-          if (!isLoginPage) {
+          // Remote-capture uses a QR-embedded token and has no refresh cookie — do NOT redirect
+          const isRemoteCapture = window.location.pathname.startsWith("/teacher/remote-capture");
+          if (!isLoginPage && !isRemoteCapture) {
             localStorage.removeItem("accessToken");
             window.location.href = "/auth";
           }

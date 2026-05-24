@@ -19,11 +19,11 @@ export const premiumScrollbarStyles: SxProps<Theme> = {
     background: 'transparent' 
   },
   '&::-webkit-scrollbar-thumb': { 
-    background: 'linear-gradient(to bottom, #a855f7, #ec4899)', 
+    background: 'linear-gradient(to bottom, #a855f7, #fb7185)', 
     borderRadius: '10px',
   },
   '&::-webkit-scrollbar-thumb:hover': { 
-    background: 'linear-gradient(to bottom, #c084fc, #f472b6)', 
+    background: 'linear-gradient(to bottom, #c084fc, #fda4af)', 
   },
   // Vertical offsets using transparent scrollbar buttons
   '&::-webkit-scrollbar-button:vertical:start:increment': { 

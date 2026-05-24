@@ -45,27 +45,29 @@ services:
     networks:
       - homura_network
 
-  pgadmin:
-    image: dpage/pgadmin4
-    container_name: homura_pgadmin
-    restart: always
-    environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
-    ports:
-      - "5050:80"
-    networks:
-      - homura_network
-    depends_on:
-      postgres:
-        condition: service_healthy
+  # pgAdmin tốn ~300MB RAM, chỉ bật khi cần xem database
+  # Để bật lại: bỏ dấu # ở các dòng bên dưới, rồi chạy: docker-compose up -d pgadmin
+  # pgadmin:
+  #   image: dpage/pgadmin4
+  #   container_name: homura_pgadmin
+  #   restart: always
+  #   environment:
+  #     PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+  #     PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+  #   ports:
+  #     - "5050:80"
+  #   networks:
+  #     - homura_network
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
 
   backend:
     build:
       context: ./backend
       target: development
     container_name: homura-backend
-    command: npm run start:dev
+    command: sh -c "npm install && npm run start:dev"
     ports:
       - "4000:4000"
     volumes:
@@ -132,7 +134,6 @@ services:
     volumes:
       - ./frontend:/app
       - frontend_modules:/app/node_modules
-      - /app/.next
     environment:
       - NODE_ENV=development
       - NEXT_PUBLIC_SERVER_URL=${SERVER_URL}

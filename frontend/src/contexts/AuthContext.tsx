@@ -11,6 +11,7 @@ interface UserData {
 
 interface AuthContextType {
   user: UserData | null;
+  token: string | null;
   loading: boolean;
   login: (data: LoginPayload) => Promise<void>;
   register: (data: RegisterPayload) => Promise<void>;
@@ -19,6 +20,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
+  token: null,
   loading: true,
   login: async () => {},
   register: async () => {},
@@ -29,6 +31,7 @@ export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<UserData | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
@@ -41,6 +44,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       try {
         const parsed = JSON.parse(storedAuth);
         setUser(parsed);
+        setToken(accessToken);
       } catch (err) {
         console.error('Failed to parse auth data', err);
         localStorage.removeItem('auth');
@@ -65,6 +69,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       if (userData && accessToken) {
         setUser(userData);
+        setToken(accessToken);
         localStorage.setItem('auth', JSON.stringify(userData));
         localStorage.setItem('accessToken', accessToken);
         router.push('/dashboard');
@@ -86,6 +91,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       if (userData && accessToken) {
         setUser(userData);
+        setToken(accessToken);
         localStorage.setItem('auth', JSON.stringify(userData));
         localStorage.setItem('accessToken', accessToken);
         router.push('/dashboard');
@@ -105,13 +111,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.error('Logout API failed', err);
     }
     setUser(null);
+    setToken(null);
     localStorage.removeItem('auth');
     localStorage.removeItem('accessToken');
     router.push('/auth');
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, token, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

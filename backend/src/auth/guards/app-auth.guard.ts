@@ -50,8 +50,9 @@ export class AppAuthGuard extends AuthGuard('jwt') {
     const cookieToken = request.cookies['xsrf_token'];
     const headerToken = request.headers['x-xsrf-token'];
 
-    if (!cookieToken || cookieToken !== headerToken) {
-      // XSRF Token mismatch - safety check
+    // Skip CSRF for cookie-less clients (mobile/QR). Bearer JWT is CSRF-safe by design.
+    // Only block if cookie IS present but header doesn't match (browser CSRF attack).
+    if (cookieToken && cookieToken !== headerToken) {
       throw new UnauthorizedException('Yêu cầu không hợp lệ (CSRF detected)');
     }
 
