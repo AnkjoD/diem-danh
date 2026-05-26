@@ -55,6 +55,29 @@ export class AiService {
     }
   }
 
+  async recognizeVideo(fileBuffer: Buffer, originalName: string, fps: number): Promise<AiResponse> {
+    try {
+      const form = new FormData();
+      form.append('file', fileBuffer, { filename: originalName });
+      form.append('fps', fps.toString());
+
+      const { data } = await axios.post<AiResponse>(`${this.aiUrl}/recognize-video`, form, {
+        headers: form.getHeaders(),
+        timeout: 60000, // Extend timeout for video processing
+      });
+
+      return data;
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error)) {
+        const errorDetail = error.response?.data ? JSON.stringify(error.response.data) : error.message;
+        this.logger.error(`Recognize Video error: ${errorDetail}`, error.stack);
+      } else if (error instanceof Error) {
+        this.logger.error(`Recognize Video error: ${error.message}`, error.stack);
+      }
+      throw new InternalServerErrorException('AI Service video processing error');
+    }
+  }
+
   async registerFace(studentId: string, fileBuffer: Buffer, originalName: string): Promise<RegisterResponse> {
     try {
       const form = new FormData();

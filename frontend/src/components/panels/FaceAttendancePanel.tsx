@@ -67,6 +67,7 @@ import {
 } from "@/common/api/session";
 import {
   recognizeAttendanceFace,
+  recognizeAttendanceVideo,
   markAttendanceManual,
   removeAttendance,
   exportAttendanceToExcel,
@@ -132,6 +133,8 @@ const FaceAttendancePanel = () => {
   const [manualIp, setManualIp] = useState("");
   const [isCameraMaximized, setIsCameraMaximized] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [videoFps, setVideoFps] = useState<number>(1);
+  const [isVideoProcessing, setIsVideoProcessing] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -283,6 +286,37 @@ const FaceAttendancePanel = () => {
     },
   });
 
+  const recognizeVideoMut = useMutation({
+    mutationFn: ({ file, sId, fps }: { file: File; sId: string; fps: number }) =>
+      recognizeAttendanceVideo(sId, file, fps),
+    onSuccess: (res) => {
+      setIsVideoProcessing(false);
+      if (res.success && res.students && res.students.length > 0) {
+        const newStatusMap = new Map(recognized);
+        res.students.forEach((s) => {
+          newStatusMap.set(s.id, "present");
+        });
+        setRecognized(newStatusMap);
+        setScanResult({ type: "success", students: res.students });
+        queryClient.invalidateQueries({
+          queryKey: ["today_session", selectedClass],
+        });
+      } else {
+        setScanResult({
+          type: "error",
+          message: res.message || "Hệ thống báo lỗi xử lý video!",
+        });
+      }
+    },
+    onError: (err: any) => {
+      setIsVideoProcessing(false);
+      setScanResult({
+        type: "error",
+        message: err.message || "Lỗi tải video",
+      });
+    },
+  });
+
   const manualMarkMut = useMutation({
     mutationFn: (payload: {
       student_id: string;
@@ -425,7 +459,7 @@ const FaceAttendancePanel = () => {
     setEndThreshold(savedEnd);
     if (sessionId) {
       if (savedLate && savedEnd && !validateTimes(savedLate, savedEnd)) return;
-      
+
       let lateIso = null;
       if (savedLate) {
         const lDate = new Date();
@@ -654,6 +688,57 @@ const FaceAttendancePanel = () => {
     e.target.value = "";
   };
 
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    let currentSessionId = sessionId;
+    const vnTimeZone = "Asia/Ho_Chi_Minh";
+    const todayStr = new Date().toLocaleDateString("sv-SE", { timeZone: vnTimeZone });
+
+    if (!currentSessionId || sessionDate !== todayStr) {
+      try {
+        const sessionData = await createSession({
+          class_id: selectedClass,
+          late_threshold: lateThreshold ? (() => {
+            const d = new Date();
+            const [h, m] = lateThreshold.split(":");
+            d.setHours(parseInt(h), parseInt(m), 0, 0);
+            return d.toISOString();
+          })() : undefined,
+          end_threshold: endThreshold ? (() => {
+            const d = new Date();
+            const [h, m] = endThreshold.split(":");
+            d.setHours(parseInt(h), parseInt(m), 0, 0);
+            return d.toISOString();
+          })() : undefined
+        });
+        const newSDate = new Date(sessionData.created_at).toLocaleDateString("sv-SE", { timeZone: vnTimeZone });
+        if (sessionData.id !== sessionId) {
+          setRecognized(new Map());
+        }
+        setSessionId(sessionData.id);
+        setSessionDate(newSDate);
+        currentSessionId = sessionData.id;
+        queryClient.invalidateQueries({ queryKey: ["today_session", selectedClass] });
+      } catch (err: any) {
+        setScanResult({
+          type: "error",
+          message: "Lỗi tạo phiên điểm danh: " + err.message,
+        });
+        setResultDialog(true);
+        return;
+      }
+    }
+
+    setResultDialog(true);
+    setScanResult(null);
+    setIsVideoProcessing(true);
+    
+    recognizeVideoMut.mutate({ file, sId: currentSessionId, fps: videoFps });
+    e.target.value = "";
+  };
+
   const removeSelectedFile = (index: number) => {
     URL.revokeObjectURL(filePreviews[index]);
     setFilesToUpload((prev) => prev.filter((_, i) => i !== index));
@@ -745,6 +830,12 @@ const FaceAttendancePanel = () => {
 
         queryClient.invalidateQueries({
           queryKey: ["today_session", selectedClass],
+        });
+      } else {
+        // Thông báo lỗi nếu ảnh tải lên không có người hoặc không thể nhận diện
+        setScanResult({
+          type: "error",
+          message: `Ảnh ${index + 1}: ${res.message || "Không nhận dạng được khuôn mặt nào trong CSDL"}`,
         });
       }
 
@@ -1062,6 +1153,39 @@ const FaceAttendancePanel = () => {
             accept="image/*"
             multiple={true}
           />
+
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <ImportButton
+              onFileSelect={handleVideoUpload}
+              disabled={
+                !selectedClass ||
+                classStudents.length === 0 ||
+                isVideoProcessing ||
+                isTimeInvalid ||
+                isLoadingTodaySession
+              }
+              label="Tải Video"
+              tooltip="Chọn một đoạn video lướt qua lớp học (Tối đa 200MB)"
+              accept="video/mp4,video/quicktime,video/webm"
+              multiple={false}
+            />
+            
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ minWidth: 60 }}>
+                {videoFps} fps:
+              </Typography>
+              <input 
+                type="range" 
+                min="0.5" 
+                max="3" 
+                step="0.5" 
+                value={videoFps}
+                onChange={(e) => setVideoFps(parseFloat(e.target.value))}
+                style={{ width: '80px', cursor: 'pointer' }}
+                title="Tốc độ trích xuất (Khung hình/giây)"
+              />
+            </Box>
+          </Box>
         </Box>
 
         {filesToUpload.length > 0 && (
@@ -1989,7 +2113,7 @@ const FaceAttendancePanel = () => {
       <Dialog
         open={resultDialog}
         onClose={() => {
-          if (!recognizeMut.isPending && processingIndex === -1) setResultDialog(false);
+          if (!recognizeMut.isPending && !isVideoProcessing && processingIndex === -1) setResultDialog(false);
         }}
         maxWidth="sm"
         fullWidth
@@ -2010,7 +2134,17 @@ const FaceAttendancePanel = () => {
           {scanResult?.type === "success" ? "Thông Tin Điểm Danh" : "Thông Báo"}
         </DialogTitle>
         <DialogContent sx={{ textAlign: "center", py: 4, overflow: "hidden", px: 1 }}>
-          {processingIndex !== -1 ? (
+          {isVideoProcessing ? (
+            <Box sx={{ py: 3, px: 4 }}>
+              <CircularProgress size={80} thickness={4} />
+              <Typography variant="h6" sx={{ mt: 3, fontWeight: 600 }}>
+                Đang xử lý Video...
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Quá trình này có thể mất từ vài giây đến vài chục giây tùy độ dài video. Vui lòng không đóng trang.
+              </Typography>
+            </Box>
+          ) : processingIndex !== -1 ? (
             <Box sx={{ py: 3, px: 4 }}>
               <Box sx={{ position: 'relative', display: 'inline-flex', mb: 3 }}>
                 <CircularProgress size={100} thickness={4} variant="determinate" value={((processingIndex + 1) / totalFiles) * 100} />

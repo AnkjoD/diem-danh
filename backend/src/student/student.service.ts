@@ -180,6 +180,9 @@ export class StudentService {
       const descriptor = (aiResponse as any).descriptor || (aiResponse as any).embedding || null;
 
       student.photo_url = photoUrl;
+      
+      student.registered_photos = [...(student.registered_photos || []), photoUrl];
+      
       if (descriptor) {
         student.face_descriptor = descriptor;
       }
@@ -187,6 +190,25 @@ export class StudentService {
     } catch (e) {
       console.error(e);
       throw new InternalServerErrorException('Failed to register face via AI Service');
+    }
+  }
+
+  async resetFace(id: string, teacherId: string) {
+    const student = await this.findOne(id, teacherId);
+    if (!student) throw new NotFoundException('Student not found or unauthorized');
+
+    try {
+      await this.aiService.deleteFace(id);
+      
+      // Clear face descriptor
+      student.face_descriptor = null as any;
+      // Clear registered photos history but keep the avatar (photo_url)
+      student.registered_photos = null;
+      
+      return this.studentRepo.save(student);
+    } catch (e) {
+      console.error(e);
+      throw new InternalServerErrorException('Failed to reset face via AI Service');
     }
   }
 }

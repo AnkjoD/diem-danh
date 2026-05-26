@@ -26,6 +26,19 @@ export const recognizeAttendanceFace = async (session_id: string, files: File[])
   return response.data;
 };
 
+export const recognizeAttendanceVideo = async (session_id: string, file: File, fps: number = 1.0): Promise<AiRecognizeResponse> => {
+  const formData = new FormData();
+  formData.append("session_id", session_id);
+  formData.append("file", file);
+  formData.append("fps", fps.toString());
+
+  const response = await http.post("/attendances/video", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 600000, // 10 phút timeout cho xử lý video
+  });
+  return response.data;
+};
+
 export const getAttendanceMatrix = async (classId: string) => {
   const response = await http.get(`/attendances/matrix/${classId}`);
   return response.data;

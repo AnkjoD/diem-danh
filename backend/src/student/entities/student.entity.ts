@@ -31,11 +31,15 @@ export class Student {
 
   @ApiProperty({ example: [0.123, -0.456], description: 'Face descriptor numerical vector', required: false })
   @Column({ type: 'jsonb', name: 'face_descriptor', nullable: true })
-  face_descriptor: number[];
+  face_descriptor: number[] | null;
 
   @ApiProperty({ example: 'http://localhost:9000/students/student_id/photo.jpg', required: false })
   @Column({ name: 'photo_url', nullable: true })
   photo_url: string;
+
+  @ApiProperty({ example: ['http://localhost:9000/url1.jpg'], description: 'Array of all registered photo URLs', required: false })
+  @Column({ type: 'jsonb', name: 'registered_photos', nullable: true })
+  registered_photos: string[] | null;
 
   @OneToMany(() => ClassStudent, (cs) => cs.student)
   classStudents: ClassStudent[];

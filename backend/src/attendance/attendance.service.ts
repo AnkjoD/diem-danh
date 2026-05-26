@@ -100,6 +100,84 @@ export class AttendanceService {
     return aggregatedResults;
   }
 
+  async recognizeVideo(sessionId: string, file: Express.Multer.File, teacherId: string, fps: number = 1.0) {
+    const session = await this.sessionRepo.findOne({
+      where: { id: sessionId },
+      relations: ['classData']
+    });
+    if (!session) throw new NotFoundException('Session not found');
+
+    const classData = await this.classRepo.findOne({
+      where: { id: session.classData.id }
+    });
+    if (!classData) throw new NotFoundException('Class not found or unauthorized');
+
+    const aiResponse: any = await this.aiService.recognizeVideo(file.buffer, file.originalname, fps);
+    
+    if (!aiResponse.student_ids || aiResponse.student_ids.length === 0) {
+      return { success: false, students: [], matchedButNotEnrolled: 0 };
+    }
+
+    const studentIds = aiResponse.student_ids as string[];
+    const recognizedStudents: any[] = [];
+    let matchedButNotEnrolled = 0;
+
+    for (let i = 0; i < studentIds.length; i++) {
+      const studentId = studentIds[i];
+
+      const isEnrolled = await this.classStudentRepo.findOne({
+        where: { classEntity: { id: session.classData.id }, student: { id: studentId } },
+        relations: ['student']
+      });
+
+      if (!isEnrolled) {
+        matchedButNotEnrolled++;
+        continue;
+      }
+
+      let record = await this.attendanceRepo.findOne({
+        where: { session: { id: session.id }, student: { id: studentId } },
+        relations: ['student'],
+      });
+
+      if (!record) {
+        record = this.attendanceRepo.create({
+          session: { id: session.id },
+          student: { id: studentId },
+          status: 'absent',
+        });
+        record.student = isEnrolled.student;
+      }
+
+      const now = new Date();
+      if (record.status !== 'present' && record.status !== 'late') {
+        let newStatus: 'present' | 'late' = 'present';
+        if (session.late_threshold && now > new Date(session.late_threshold)) {
+          newStatus = 'late';
+        }
+        record.status = newStatus;
+        record.recognized_at = now;
+      }
+      
+      // We don't save bounding boxes for video, just raw frame url could be null
+      await this.attendanceRepo.save(record);
+      
+      if (!recognizedStudents.find(s => s.id === record.student.id)) {
+        recognizedStudents.push(record.student);
+      }
+    }
+
+    return { 
+      success: recognizedStudents.length > 0, 
+      students: recognizedStudents,
+      matchedButNotEnrolled,
+      photoUrl: null, // No single photo for video
+      bboxes: [],
+      imgWidth: 0,
+      imgHeight: 0
+    };
+  }
+
   private async processSingleFile(session: Session, file: Express.Multer.File) {
     let processedBuffer = file.buffer;
     try {

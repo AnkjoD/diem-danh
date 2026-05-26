@@ -7,6 +7,7 @@ export interface StudentData {
   teacher_id: string | null;
   face_descriptor: number[] | null;
   photo_url: string | null;
+  registered_photos: string[] | null;
   created_at: string;
 }
 

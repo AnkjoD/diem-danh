@@ -16,6 +16,7 @@ import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import MailOutlineIcon from '@mui/icons-material/MailOutline';
 import PhoneIphoneIcon from '@mui/icons-material/PhoneIphone';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 import * as XLSX from 'xlsx';
 import { parseStudentFile } from '@/common/utils/excelParser';
 import { hiddenScrollbarStyles } from '@/theme/scrollbar.styles';
@@ -27,7 +28,7 @@ import { ImportButton } from '../common/ImportButton';
 import { EmptyState } from '../common/EmptyState';
 import { useConfirm } from '@/hooks/useConfirm';
 import { useAuth } from '@/contexts/AuthContext';
-import { getStudents, createStudent, deleteStudent, createBulkStudents, updateStudent } from '@/common/api/student';
+import { getStudents, createStudent, deleteStudent, createBulkStudents, updateStudent, resetStudentFace } from '@/common/api/student';
 import { StudentData } from '@/common/interfaces/student';
 import { fixLocalUrl } from '@/common/utils/url';
 
@@ -44,6 +45,7 @@ const StudentsPanel = () => {
   const openConfirm = useConfirm();
   const [addDialog, setAddDialog] = useState(false);
   const [faceDialog, setFaceDialog] = useState<StudentData | null>(null);
+  const [galleryDialog, setGalleryDialog] = useState<StudentData | null>(null);
   const [editStudent, setEditStudent] = useState<StudentData | null>(null);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
@@ -95,6 +97,14 @@ const StudentsPanel = () => {
       queryClient.invalidateQueries({ queryKey: ['students'] });
       setSelected([]);
     }
+  });
+
+  const resetStudentFaceMut = useMutation({
+    mutationFn: resetStudentFace,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['students'] });
+    },
+    onError: (e: any) => setError(e.message || 'Lỗi khi reset khuôn mặt')
   });
 
   const handleFaceRegistered = () => {
@@ -326,7 +336,25 @@ const StudentsPanel = () => {
                       <TableCell>{s.phone || '—'}</TableCell>
                       <TableCell align="center" onClick={(e) => e.stopPropagation()}>
                         {s.face_descriptor ? (
-                          <Chip label="Đã đăng ký" color="success" size="small" variant="outlined" />
+                          <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                            <Button size="small" variant="outlined" startIcon={<PhotoLibraryIcon />} onClick={(e) => { e.stopPropagation(); setGalleryDialog(s); }} color="info">
+                              Ảnh ({s.registered_photos?.length || (s.photo_url ? 1 : 0)})
+                            </Button>
+                            <Button size="small" variant="outlined" startIcon={<CameraAltIcon />} onClick={(e) => { e.stopPropagation(); setFaceDialog(s); }} color="primary">
+                              Thêm
+                            </Button>
+                            <Button size="small" color="error" variant="outlined" onClick={(e) => {
+                              e.stopPropagation();
+                              openConfirm({
+                                title: 'Xóa dữ liệu khuôn mặt',
+                                message: `Bạn có chắc muốn xóa sạch toàn bộ dữ liệu khuôn mặt của ${s.name} khỏi AI? (Bạn sẽ cần quét lại ảnh)`,
+                                onConfirm: () => resetStudentFaceMut.mutate(s.id),
+                                isPending: resetStudentFaceMut.isPending
+                              });
+                            }}>
+                              Reset
+                            </Button>
+                          </Box>
                         ) : (
                           <Button size="small" startIcon={<CameraAltIcon />} onClick={() => setFaceDialog(s)} color="warning">
                             Đăng ký
@@ -420,13 +448,39 @@ const StudentsPanel = () => {
                       )}
                     </Box>
                   </CardContent>
-                  <CardActions sx={{ p: 2, pt: 0, justifyContent: 'center' }}>
+                  <CardActions sx={{ p: 2, pt: 0, flexDirection: 'column', gap: 1 }}>
                     {!s.face_descriptor ? (
                       <Button fullWidth variant="outlined" size="small" startIcon={<CameraAltIcon />} onClick={() => setFaceDialog(s)} color="warning">
                         Đăng ký ngay
                       </Button>
                     ) : (
-                      <Button fullWidth variant="text" size="small" disabled sx={{ opacity: 0.5 }}>Đã đăng ký</Button>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, width: '100%' }}>
+                        <Button fullWidth variant="outlined" color="info" size="small" startIcon={<PhotoLibraryIcon />} onClick={(e) => {
+                          e.stopPropagation();
+                          setGalleryDialog(s);
+                        }}>
+                          Xem {s.registered_photos?.length || (s.photo_url ? 1 : 0)} ảnh
+                        </Button>
+                        <Box sx={{ display: 'flex', gap: 1, width: '100%' }}>
+                          <Button fullWidth variant="outlined" color="primary" size="small" startIcon={<CameraAltIcon />} onClick={(e) => {
+                            e.stopPropagation();
+                            setFaceDialog(s);
+                          }}>
+                            Thêm
+                          </Button>
+                          <Button fullWidth variant="outlined" color="error" size="small" onClick={(e) => {
+                          e.stopPropagation();
+                          openConfirm({
+                            title: 'Xóa dữ liệu khuôn mặt',
+                            message: `Bạn có chắc muốn xóa sạch toàn bộ dữ liệu khuôn mặt của ${s.name} khỏi AI?`,
+                            onConfirm: () => resetStudentFaceMut.mutate(s.id),
+                            isPending: resetStudentFaceMut.isPending
+                          });
+                        }}>
+                          Reset
+                        </Button>
+                      </Box>
+                    </Box>
                     )}
                   </CardActions>
                   <Menu anchorEl={anchorEl[s.id]} open={Boolean(anchorEl[s.id])} onClose={() => handleMenuClose(s.id)}>
@@ -497,6 +551,34 @@ const StudentsPanel = () => {
           onClose={() => setFaceDialog(null)}
           onRegistered={handleFaceRegistered}
         />
+      )}
+
+      {galleryDialog && (
+        <Dialog open={!!galleryDialog} onClose={() => setGalleryDialog(null)} maxWidth="sm" fullWidth>
+          <DialogTitle fontFamily='"Cinzel", serif'>
+            Thư viện ảnh - {galleryDialog.name}
+          </DialogTitle>
+          <DialogContent>
+            {(!galleryDialog.registered_photos || galleryDialog.registered_photos.length === 0) && galleryDialog.photo_url ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+                <img src={fixLocalUrl(galleryDialog.photo_url) || ''} alt="Face" style={{ width: 160, height: 213, objectFit: 'cover', borderRadius: 8 }} />
+              </Box>
+            ) : galleryDialog.registered_photos && galleryDialog.registered_photos.length > 0 ? (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center', p: 2 }}>
+                {galleryDialog.registered_photos?.map((url, idx) => (
+                  <Box key={idx} sx={{ width: 120, height: 160, borderRadius: 2, overflow: 'hidden', boxShadow: 2 }}>
+                    <img src={fixLocalUrl(url) || ''} alt={`Face ${idx+1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </Box>
+                ))}
+              </Box>
+            ) : (
+              <Typography textAlign="center" color="text.secondary" sx={{ py: 4 }}>Chưa có hình ảnh nào.</Typography>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setGalleryDialog(null)}>Đóng</Button>
+          </DialogActions>
+        </Dialog>
       )}
     </Box>
   );

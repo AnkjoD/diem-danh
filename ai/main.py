@@ -10,6 +10,7 @@ from src.aligner import FaceAligner
 from src.recognizer import FaceRecognizer
 from src.matcher import FaceMatcher
 import os
+import tempfile
 app = FastAPI(title="Face Attendance AI Core")
 
 app.add_middleware(
@@ -48,54 +49,52 @@ async def process_upload(file: UploadFile) -> np.ndarray:
   
     return img
 
-def pre_resize_for_detection(image: np.ndarray, max_side: int = 1280) -> np.ndarray:
-    """
-    Pre-resize ảnh lớn xuống max_side trước khi đưa vào detector.
-    Giữ nguyên tỉ lệ. Model ONNX vẫn chạy ở 640x640 cố định.
-    Điều này giúp mặt người trong ảnh chụp cả lớp từ điện thoại 
-    không bị quá nhỏ sau bước resize 640x640 bên trong detector.
-    """
-    h, w = image.shape[:2]
-    current_max = max(h, w)
-    if current_max <= max_side:
-        return image
-    scale = max_side / current_max
-    new_w = int(w * scale)
-    new_h = int(h * scale)
-    print(f"[PRE-RESIZE] {w}x{h} -> {new_w}x{new_h} (scale={scale:.3f})")
-    return cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
 
 
 def get_face_data(image: np.ndarray, mode: Literal["register", "recognize"] = "recognize"):
     h_orig, w_orig = image.shape[:2]
     print(f"[get_face_data] mode={mode}, original_size={w_orig}x{h_orig}")
 
-    scale = 1.0
-    if mode == "recognize":
-        # Pre-resize ảnh xuống tối đa 1280px để mặt không quá nhỏ
-        # Sau đó detector resize xuống 640x640 cứng -> mặt giữ được tỉ lệ tốt hơn
-        current_max = max(h_orig, w_orig)
-        if current_max > 1280:
-            scale = 1280.0 / current_max
-            new_w = int(w_orig * scale)
-            new_h = int(h_orig * scale)
-            print(f"[PRE-RESIZE] {w_orig}x{h_orig} -> {new_w}x{new_h} (scale={scale:.3f})")
-            image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
-        thresh = 0.4
-    else:
-        thresh = 0.5
+    # Threshold for detection (0.5 giống b5fe7fb - đây là giá trị đã kiểm chứng tốt nhất)
+    thresh = 0.5
+    # Input size cố định (640, 640) giống b5fe7fb - detector có letterbox nên không bị méo
+    input_size = (640, 640)
+    print(f"[get_face_data] input_size: {input_size}")
 
-    detection_result = detector.detect(image, thresh=thresh, input_size=(640, 640))
+    detection_result = detector.detect(image, thresh=thresh, input_size=input_size)
 
-    if not isinstance(detection_result, (tuple, list)) or len(detection_result) < 2:
-        print(f"[get_face_data] detector returned invalid result")
-        return None
+    def _is_valid_det(res):
+        return isinstance(res, (tuple, list)) and len(res) >= 2 and res[0] is not None and res[0].shape[0] > 0
+
+    if not _is_valid_det(detection_result):
+        print("[get_face_data] No face detected with default settings. Entering fallback mode...")
+        # Fallback 1: Giảm ngưỡng nhận diện (phòng ảnh có khuôn mặt nhỏ hoặc nghiêng)
+        detection_result = detector.detect(image, thresh=0.2, input_size=(640, 640))
+
+        # Fallback 2: Thử với ảnh size nhỏ hơn (320x320) - phòng mặt quá to vượt receptive field
+        if not _is_valid_det(detection_result):
+            print(f"[get_face_data] Lower threshold failed. Trying 320x320...")
+            detection_result = detector.detect(image, thresh=0.2, input_size=(320, 320))
+
+        # Fallback 3 & 4: Xoay ảnh (phòng EXIF xoay ngang)
+        if not _is_valid_det(detection_result):
+            print(f"[get_face_data] Size reduction failed. Trying to rotate 90 degrees CW...")
+            image_rot90 = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
+            detection_result = detector.detect(image_rot90, thresh=0.2, input_size=(640, 640))
+            if _is_valid_det(detection_result):
+                image = image_rot90
+            else:
+                print(f"[get_face_data] Trying to rotate 90 degrees CCW...")
+                image_rot270 = cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                detection_result = detector.detect(image_rot270, thresh=0.2, input_size=(640, 640))
+                if _is_valid_det(detection_result):
+                    image = image_rot270
+                else:
+                    print("[get_face_data] No faces detected even after ALL fallbacks.")
+                    return None
 
     det, landmarks = detection_result[0], detection_result[1]
-
-    if det is None or det.shape[0] == 0 or landmarks is None:
-        print(f"[get_face_data] No faces detected (det={det})")
-        return None
 
     print(f"[get_face_data] Detected {det.shape[0]} face(s)")
 
@@ -103,8 +102,6 @@ def get_face_data(image: np.ndarray, mode: Literal["register", "recognize"] = "r
         results = []
         for i in range(len(landmarks)):
             bbox = det[i, 0:4].tolist()
-            if scale != 1.0:
-                bbox = [coord / scale for coord in bbox]
             aligned_face = aligner.align(image, landmarks[i])
             embedding = recognizer.recognize(aligned_face)
             results.append({"embedding": embedding, "bbox": bbox})
@@ -117,8 +114,6 @@ def get_face_data(image: np.ndarray, mode: Literal["register", "recognize"] = "r
         aligned_face = aligner.align(image, landmarks[max_area_idx])
         embedding = recognizer.recognize(aligned_face)
         bbox = bboxes[max_area_idx].tolist()
-        if scale != 1.0:
-            bbox = [coord / scale for coord in bbox]
         return {"embedding": embedding, "bbox": bbox}
 
 @app.post("/recognize", response_model=RecognizeResponse)
@@ -136,7 +131,7 @@ async def recognize(file: UploadFile = File(...)):
     bboxes = []
     distances = []
     for i, res in enumerate(results):
-        student_id, distance = matcher.search_face(res["embedding"], threshold=1.2)
+        student_id, distance = matcher.search_face(res["embedding"], threshold=1.0)
         print(f"[/recognize] Face #{i+1}: matched={student_id}, distance={distance:.4f}")
         if student_id and distance:
             student_ids.append(student_id)
@@ -151,7 +146,78 @@ async def recognize(file: UploadFile = File(...)):
             distances=distances, 
             message="Match"
         )
-    return RecognizeResponse(status="unknown", message="Face not found in DB")
+    return RecognizeResponse(status="failed", message="No faces recognized from the database")
+
+@app.post("/recognize-video", response_model=RecognizeResponse)
+async def recognize_video(file: UploadFile = File(...), fps: float = Form(1.0)):
+    print(f"[/recognize-video] Received video: {file.filename}, requested {fps} fps")
+    
+    # Save uploaded video to a temporary file
+    temp_video = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+    try:
+        content = await file.read()
+        temp_video.write(content)
+        temp_video.flush()
+        
+        # Check size limit (e.g. 200MB)
+        if len(content) > 200 * 1024 * 1024:
+            return RecognizeResponse(status="failed", message="Video file too large (max 200MB)")
+
+        cap = cv2.VideoCapture(temp_video.name)
+        if not cap.isOpened():
+            return RecognizeResponse(status="failed", message="Failed to process video file")
+
+        video_fps = cap.get(cv2.CAP_PROP_FPS)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if video_fps <= 0 or total_frames <= 0:
+            return RecognizeResponse(status="failed", message="Invalid video file format")
+            
+        video_duration = total_frames / video_fps
+        print(f"[/recognize-video] Video duration: {video_duration:.2f}s, original FPS: {video_fps}")
+        
+        # Determine how many frames to skip to achieve the requested `fps`
+        if fps <= 0: fps = 1.0
+        frame_interval = int(video_fps / fps)
+        if frame_interval < 1: frame_interval = 1
+
+        unique_student_ids = set()
+        
+        frame_count = 0
+        processed_count = 0
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            # Smart sampling: process only 1 frame every `frame_interval` frames
+            if frame_count % frame_interval == 0:
+                results = get_face_data(frame, "recognize")
+                if results and len(results) > 0:
+                    for res in results:
+                        student_id, distance = matcher.search_face(res["embedding"], threshold=1.2)
+                        if student_id and distance:
+                            unique_student_ids.add(student_id)
+                processed_count += 1
+                
+            frame_count += 1
+
+        cap.release()
+        print(f"[/recognize-video] Extracted and processed {processed_count} frames. Found {len(unique_student_ids)} students.")
+        
+        if len(unique_student_ids) > 0:
+            return RecognizeResponse(
+                status="success", 
+                student_ids=list(unique_student_ids),
+                bboxes=[], 
+                distances=[], 
+                message=f"Recognized {len(unique_student_ids)} students from video"
+            )
+        else:
+            return RecognizeResponse(status="failed", message="No faces recognized from the video")
+            
+    finally:
+        temp_video.close()
+        os.unlink(temp_video.name)
 
 @app.post("/register", response_model=RegisterResponse)
 async def register(student_id: str = Form(...), file: UploadFile = File(...)):

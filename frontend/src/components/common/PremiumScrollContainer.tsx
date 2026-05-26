@@ -33,10 +33,15 @@ export const PremiumScrollContainer: React.FC<PremiumScrollContainerProps> = ({
 
   if (component === 'tableContainer') {
     return (
-      <TableContainer 
-        component={Paper} 
-        variant={variant}
-        sx={baseStyles}
+      <TableContainer
+        component={Paper}
+        sx={{
+          ...baseStyles,
+          ...(variant === 'outlined' && {
+            border: '1px solid rgba(255,255,255,0.08)',
+            boxShadow: 'none',
+          }),
+        }}
       >
         {children}
       </TableContainer>

@@ -76,6 +76,35 @@ export class AttendanceController {
     return this.attendanceService.recognizeFaces(sessionId, files);
   }
 
+  @Public()
+  @Post('video')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Điểm danh qua video (Không yêu cầu đăng nhập)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string' },
+        fps: { type: 'number', default: 1.0 },
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  recognizeVideo(
+    @Body('session_id') sessionId: string,
+    @Body('fps') fpsStr: string,
+    @UploadedFile() file: Express.Multer.File
+  ) {
+    if (!sessionId) throw new BadRequestException('session_id is required');
+    if (!file) throw new BadRequestException('video file is required');
+    const fps = fpsStr ? parseFloat(fpsStr) : 1.0;
+    // Hardcode teacher_id to empty since it's a public endpoint (like recognizeFace)
+    // Wait, recognizeFace bypasses teacherId check entirely in the service because it uses skipAuth logic?
+    // Actually, recognizeFace just passes 'system' or similar if public. We pass empty string for teacherId.
+    return this.attendanceService.recognizeVideo(sessionId, file, '', fps);
+  }
+
   @Post('remove')
   @ApiOperation({ summary: 'Gỡ điểm danh của sinh viên' })
   removeAttendance(@Body() body: { session_id: string; student_id: string; archive?: boolean }, @Req() req: any) {

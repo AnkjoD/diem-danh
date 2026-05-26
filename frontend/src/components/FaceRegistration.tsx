@@ -14,18 +14,30 @@ interface FaceRegistrationProps {
 }
 
 const FaceRegistration: React.FC<FaceRegistrationProps> = ({ student, open, onClose, onRegistered }) => {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [useCamera, setUseCamera] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  
-  const registerMut = useMutation({
-    mutationFn: (f: File) => registerStudentFace(student.id, f),
-    onSuccess: () => {
+
+  const handleConfirm = async () => {
+    if (files.length === 0) return;
+    setIsProcessing(true);
+    setErrorMsg('');
+    try {
+      for (const f of files) {
+        await registerStudentFace(student.id, f);
+      }
       onRegistered();
+    } catch (e: any) {
+      setErrorMsg(e.message || 'Lỗi: Không thể đăng ký một trong các ảnh');
+    } finally {
+      setIsProcessing(false);
     }
-  });
+  };
 
   const startCamera = async () => {
     try {
@@ -33,7 +45,7 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({ student, open, onCl
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
       setUseCamera(true);
-      setFile(null); // Clear any existing file if turning on camera
+      // setFiles([]); // Don't clear existing files when opening camera, so they can mix uploads and captures
     } catch (e) {
       alert('Không thể truy cập camera. Vui lòng kiểm tra quyền sử dụng!');
     }
@@ -54,8 +66,8 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({ student, open, onCl
     canvas.toBlob(blob => {
       if (blob) {
         const capturedFile = new File([blob], `capture_${Date.now()}.jpg`, { type: 'image/jpeg' });
-        setFile(capturedFile);
-        stopCamera();
+        setFiles(prev => [...prev, capturedFile]);
+        // Không stopCamera() để người dùng có thể chụp nhiều ảnh liên tục
       }
     }, 'image/jpeg', 0.9);
   };
@@ -79,12 +91,12 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({ student, open, onCl
       if (e.key === 'Enter') {
         e.preventDefault();
         if (useCamera) capturePhoto();
-        else if (file && !registerMut.isPending) registerMut.mutate(file);
+        else if (files.length > 0 && !isProcessing) handleConfirm();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, useCamera, file, registerMut.isPending]);
+  }, [open, useCamera, files, isProcessing]);
 
   const handleClose = (event?: any, reason?: string) => {
     if (reason === 'escapeKeyDown' && useCamera) {
@@ -105,9 +117,15 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({ student, open, onCl
             </Typography>
             
             <Box sx={{ display: 'flex', gap: 2, mb: 1 }}>
-              <Button component="label" variant={file && !useCamera ? "contained" : "outlined"} startIcon={<CloudUploadIcon />} color="primary">
-                Tải File Lên
-                <input type="file" accept="image/*" hidden aria-label="Tải ảnh lên" onChange={(e) => { setFile(e.target.files?.[0] || null); stopCamera(); }} />
+              <Button component="label" variant={files.length > 0 && !useCamera ? "contained" : "outlined"} startIcon={<CloudUploadIcon />} color="primary">
+                Tải File Lên (Nhiều ảnh)
+                <input type="file" accept="image/*" multiple hidden aria-label="Tải ảnh lên" onChange={(e) => { 
+                  if (e.target.files) {
+                    const newFiles = Array.from(e.target.files);
+                    setFiles(prev => [...prev, ...newFiles]);
+                  }
+                  stopCamera(); 
+                }} />
               </Button>
               
               {!useCamera ? (
@@ -131,38 +149,49 @@ const FaceRegistration: React.FC<FaceRegistrationProps> = ({ student, open, onCl
               </Box>
             )}
 
-            {file && !useCamera && (
+            {files.length > 0 && (
               <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                 <Alert severity="success" sx={{ width: '100%' }}>
-                  {file.name.startsWith('capture_') 
-                    ? 'Đã chụp ảnh thành công! Hãy xem trước ảnh ở dưới.' 
-                    : `Đã đính kèm ảnh: ${file.name}`}
+                  Đã thêm {files.length} ảnh. Bạn có thể chụp thêm hoặc tải thêm.
                 </Alert>
-                <Box sx={{ width: '100%', maxWidth: 320, borderRadius: 2, overflow: 'hidden', border: '2px solid rgba(168,85,247,0.5)', boxShadow: 2 }}>
-                  <img 
-                    src={URL.createObjectURL(file)} 
-                    alt="Face Preview" 
-                    style={{ width: '100%', display: 'block', transform: file.name.startsWith('capture_') ? 'scaleX(-1)' : 'none' }} 
-                  />
+                <Box sx={{ width: '100%', display: 'flex', overflowX: 'auto', gap: 2, p: 1, border: '2px solid rgba(168,85,247,0.3)', borderRadius: 2 }}>
+                  {files.map((f, idx) => (
+                    <Box key={idx} sx={{ minWidth: 120, position: 'relative', borderRadius: 2, overflow: 'hidden', boxShadow: 2 }}>
+                      <img 
+                        src={URL.createObjectURL(f)} 
+                        alt="Face Preview" 
+                        style={{ width: 120, height: 160, objectFit: 'cover', display: 'block', transform: f.name.startsWith('capture_') ? 'scaleX(-1)' : 'none' }} 
+                      />
+                      <Button 
+                        size="small" 
+                        color="error" 
+                        variant="contained" 
+                        sx={{ minWidth: 0, p: 0.5, position: 'absolute', top: 4, right: 4, borderRadius: '50%' }}
+                        onClick={() => setFiles(prev => prev.filter((_, i) => i !== idx))}
+                      >
+                        X
+                      </Button>
+                    </Box>
+                  ))}
                 </Box>
               </Box>
             )}
 
-            {registerMut.isError && (
+            {errorMsg && (
                <Alert severity="error" sx={{ width: '100%' }}>
-                 Lỗi AI: {registerMut.error.message}
+                 {errorMsg}
                </Alert>
             )}
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleClose} disabled={registerMut.isPending}>Huỷ (Esc)</Button>
+          <Button onClick={handleClose} disabled={isProcessing}>Huỷ (Esc)</Button>
           <Button 
-            onClick={() => file && registerMut.mutate(file)}
+            onClick={handleConfirm}
             variant="contained" 
-            disabled={!file || registerMut.isPending} 
+            disabled={files.length === 0 || isProcessing} 
           >
-            {registerMut.isPending ? <CircularProgress size={24} /> : 'Xác nhận (Enter)'}
+            {isProcessing ? <CircularProgress size={24} /> : 'Đăng ký các ảnh (Enter)'}
           </Button>
         </DialogActions>
     </Dialog>

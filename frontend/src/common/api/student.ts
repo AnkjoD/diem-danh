@@ -35,3 +35,8 @@ export const registerStudentFace = async (id: string, file: File): Promise<Stude
   });
   return response.data;
 };
+
+export const resetStudentFace = async (id: string) => {
+  const response = await http.delete(`/students/${id}/face`);
+  return response.data;
+};

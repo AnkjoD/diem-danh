@@ -53,6 +53,8 @@ const RemoteCaptureContent = () => {
   const [results, setResults] = useState<StudentData[]>([]);
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [selectedVideo, setSelectedVideo] = useState<File | null>(null);
+  const [videoFps, setVideoFps] = useState<number>(1);
   const [previews, setPreviews] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -143,10 +145,21 @@ const RemoteCaptureContent = () => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     
+    setSelectedVideo(null); // Clear video if images selected
     const fileArray = Array.from(files);
     const newPreviews = fileArray.map(f => URL.createObjectURL(f));
     setSelectedFiles(prev => [...prev, ...fileArray]);
     setPreviews(prev => [...prev, ...newPreviews]);
+    e.target.value = '';
+  };
+
+  const handleVideoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setSelectedFiles([]); // Clear images if video selected
+    setPreviews([]);
+    setSelectedVideo(file);
     e.target.value = '';
   };
 
@@ -166,13 +179,22 @@ const RemoteCaptureContent = () => {
         return;
       }
 
-      // Gửi ảnh bằng publicHttp (không cần token)
+      // Gửi file bằng publicHttp (không cần token)
       const baseURL = getPublicBaseURL();
       const formData = new FormData();
       formData.append('session_id', sessionId);
-      selectedFiles.forEach(file => formData.append('files', file));
+      
+      let endpoint = '/attendances/recognize';
+      
+      if (selectedVideo) {
+        formData.append('file', selectedVideo);
+        formData.append('fps', videoFps.toString());
+        endpoint = '/attendances/video';
+      } else {
+        selectedFiles.forEach(file => formData.append('files', file));
+      }
 
-      const { data: response } = await publicHttp.post('/attendances/recognize', formData, {
+      const { data: response } = await publicHttp.post(endpoint, formData, {
         baseURL,
         headers: { 'Content-Type': 'multipart/form-data' },
       });
@@ -267,6 +289,53 @@ const RemoteCaptureContent = () => {
             />
           </Button>
 
+          <Button
+            variant="outlined"
+            component="label"
+            fullWidth
+            size="large"
+            disabled={uploading}
+            startIcon={<CloudUploadIcon />}
+            sx={{ 
+              mt: 2,
+              py: 2.5, 
+              borderRadius: 4, 
+              borderColor: 'rgba(168,85,247,0.5)',
+              color: '#c084fc',
+              '&:hover': { borderColor: '#c084fc', bgcolor: 'rgba(168,85,247,0.1)' },
+              fontSize: '1.1rem',
+              fontWeight: 'bold',
+              textTransform: 'none'
+            }}
+          >
+            {selectedVideo ? `Video đã chọn: ${selectedVideo.name}` : 'Chọn Video (Tối đa 200MB)'}
+            <input
+              type="file"
+              hidden
+              accept="video/mp4,video/quicktime,video/webm"
+              aria-label="Chọn video để điểm danh"
+              onChange={handleVideoChange}
+            />
+          </Button>
+
+          {selectedVideo && (
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, mt: 3, p: 2, bgcolor: 'rgba(255,255,255,0.05)', borderRadius: 3 }}>
+              <Typography variant="body2" color="text.secondary">
+                Tốc độ quét: {videoFps} fps
+              </Typography>
+              <input 
+                type="range" 
+                min="0.5" 
+                max="3" 
+                step="0.5" 
+                value={videoFps}
+                onChange={(e) => setVideoFps(parseFloat(e.target.value))}
+                style={{ flex: 1, cursor: 'pointer' }}
+                title="Khung hình/giây"
+              />
+            </Box>
+          )}
+
           {/* Preview ảnh đã chọn */}
           {previews.length > 0 && (
             <Box sx={{ mt: 2 }}>
@@ -288,24 +357,26 @@ const RemoteCaptureContent = () => {
                   </Box>
                 ))}
               </Box>
-              <Button
-                variant="contained"
-                fullWidth
-                size="large"
-                onClick={handleSubmit}
-                disabled={uploading}
-                startIcon={uploading ? <CircularProgress size={20} color="inherit" /> : undefined}
-                sx={{
-                  py: 2, borderRadius: 4,
-                  background: 'linear-gradient(135deg, #22c55e, #16a34a)',
-                  fontWeight: 'bold', textTransform: 'none', fontSize: '1rem'
-                }}
-              >
-                {uploading ? 'Đang nhận diện...' : `Điểm danh ${selectedFiles.length} ảnh`}
-              </Button>
             </Box>
           )}
 
+              {(selectedFiles.length > 0 || selectedVideo) && (
+                <Button
+                  variant="contained"
+                  fullWidth
+                  size="large"
+                  color="success"
+                  onClick={handleSubmit}
+                  disabled={uploading}
+                  startIcon={uploading ? <CircularProgress size={24} color="inherit" /> : <CloudUploadIcon />}
+                  sx={{ 
+                    mt: 3, py: 2, borderRadius: 3, fontSize: '1.1rem', fontWeight: 'bold',
+                    boxShadow: '0 8px 16px rgba(34,197,94,0.3)', textTransform: 'none'
+                  }}
+                >
+                  {uploading ? 'Đang xử lý...' : 'Bắt đầu nhận diện AI'}
+                </Button>
+              )}
           {error && (
             <Alert severity="error" sx={{ mt: 3, borderRadius: 3, bgcolor: 'rgba(244,67,54,0.1)', color: '#ff8a80', border: '1px solid rgba(244,67,54,0.3)', textAlign: 'left' }}>
               <Typography variant="body2" sx={{ wordBreak: 'break-word', fontSize: '0.9rem' }}>

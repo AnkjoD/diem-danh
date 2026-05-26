@@ -82,4 +82,11 @@ export class StudentController {
     const teacher_id = req.user._id || req.user.id;
     return this.studentService.registerFace(id, file, teacher_id);
   }
+
+  @ApiOperation({ summary: 'Delete a student face data' })
+  @Delete(':id/face')
+  resetFace(@Param('id') id: string, @Req() req: any) {
+    const teacher_id = req.user._id || req.user.id;
+    return this.studentService.resetFace(id, teacher_id);
+  }
 }
